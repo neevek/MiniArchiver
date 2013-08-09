@@ -27,15 +27,8 @@ public class MiniArchiver {
     private final static int VERSION = 1;
     private final static int BYTE_BUF_SIZE = 1024 * 4;
 
-
-    public static void main(String[] args) {
-        archive("/Users/neevek/Desktop/html", "/Users/neevek/Desktop/a.mar", false);
-        unarchive("/Users/neevek/Desktop/a.mar", "/Users/neevek/Desktop/a");
-    }
-
     // ************* Archive related code *************
-
-    public static void archive (String rootPath, String outputFile, boolean incCurDir) {
+    public static void archive (String rootPath, String outputFile, boolean compress, boolean incCurDir) {
         File rootDir = new File(rootPath);
         if (!rootDir.exists())
             throw new RuntimeException("Directory not found: " + rootPath);
@@ -48,13 +41,16 @@ public class MiniArchiver {
 
         DataOutputStream dos = null;
         try {
-            dos = new DataOutputStream(new GZIPOutputStream(new FileOutputStream(outputFile)));
+            if (compress)
+                dos = new DataOutputStream(new GZIPOutputStream(new FileOutputStream(outputFile)));
+            else
+                dos = new DataOutputStream(new FileOutputStream(outputFile));
             dos.writeShort(VERSION);
             archiveInternal(rootDir, dos, pathStartIndex);
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
-            closeCloseable(dos);
+            MiniArchiverUtil.closeCloseable(dos);
         }
     }
 
@@ -117,7 +113,7 @@ public class MiniArchiver {
                 dos.write(buf, 0, lenRead);
             }
         } finally {
-            closeCloseable(is);
+            MiniArchiverUtil.closeCloseable(is);
         }
     }
 
@@ -125,20 +121,23 @@ public class MiniArchiver {
     // ************* Unarchive related code *************
 
     public static void unarchive (String archiveFilePath, String outputDirPath) {
-        File archiveFile = new File(archiveFilePath);
-        if (!archiveFile.exists()) {
-            throw new RuntimeException("File not found: " + archiveFilePath);
-        }
-        if (!archiveFile.isFile()) {
-            throw new RuntimeException("Not a file: " + archiveFilePath);
-        }
+        File archiveFile = newArchiveFile(archiveFilePath);
 
         File outputDir = new File(outputDirPath);
         outputDir.mkdirs();
 
         DataInputStream dis = null;
         try {
-            dis = new DataInputStream(new GZIPInputStream(new FileInputStream(archiveFile)));
+            FileInputStream fis = new FileInputStream(archiveFile);
+            int byte1 = fis.read();
+            int byte2 = fis.read();
+            fis.close();
+
+            if (byte1 == 0x1f && (byte2 & 0xff) == 0x8b)
+                dis = new DataInputStream(new GZIPInputStream(new FileInputStream(archiveFile)));
+            else
+                dis = new DataInputStream(new FileInputStream(archiveFile));
+
             // ignore the version number
             short version = dis.readShort();
 
@@ -146,13 +145,24 @@ public class MiniArchiver {
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
-            closeCloseable(dis);
+            MiniArchiverUtil.closeCloseable(dis);
         }
+    }
+
+    private static File newArchiveFile(String archiveFilePath) {
+        File archiveFile = new File(archiveFilePath);
+        if (!archiveFile.exists()) {
+            throw new RuntimeException("File not found: " + archiveFilePath);
+        }
+        if (!archiveFile.isFile()) {
+            throw new RuntimeException("Not a file: " + archiveFilePath);
+        }
+        return archiveFile;
     }
 
     public static void unarchiveInternal (DataInputStream dis, File outputDir) throws IOException {
         while (true) {
-            int filePathLength = safeReadShort(dis);
+            int filePathLength = MiniArchiverUtil.safeReadShort(dis);
             if (filePathLength == -1)
                 return; // reach the end of the archive
 
@@ -203,11 +213,84 @@ public class MiniArchiver {
                 totalRead += lenRead;
             }
         } finally {
-            closeCloseable(fos);
+            MiniArchiverUtil.closeCloseable(fos);
         }
     }
 
-    // ************* Utility methods *************
+    // ************* Locate file realted code *************
+    public static void locateFile (String archiveFilePath, String name, OnArchivedFileLocatedListener listener) throws IOException {
+        if (listener == null)
+            throw new NullPointerException("OnArchivedFileLocatedListener is null");
+
+        File archiveFile = newArchiveFile(archiveFilePath);
+
+        DataInputStream dis = null;
+        try {
+            FileInputStream fis = new FileInputStream(archiveFile);
+            int byte1 = fis.read();
+            int byte2 = fis.read();
+            fis.close();
+
+            if (byte1 == 0x1f && (byte2 & 0xff) == 0x8b)
+                dis = new DataInputStream(new GZIPInputStream(new FileInputStream(archiveFile)));
+            else
+                dis = new DataInputStream(new FileInputStream(archiveFile));
+
+            // ignore the version number
+            short version = dis.readShort();
+
+            while (true) {
+                short filePathLength = MiniArchiverUtil.safeReadShort(dis);
+                if (filePathLength == -1)
+                    break;  // reach the end of file
+
+                boolean isDirectory = (filePathLength & DIR_MARK_BIT) > 0;
+                int fileLength;
+                String filePath;
+
+                if (isDirectory) {
+                    filePathLength &= MAX_FILE_PATH_LEN;
+                    filePath = readFilePath(dis, filePathLength);
+                    fileLength = 0;
+                } else {
+                    filePath = readFilePath(dis, filePathLength);
+                    fileLength = dis.readInt();
+                }
+
+                if (name.equals(filePath)) {
+                    listener.onLocated(name, fileLength, isDirectory);
+                    listener.onStreamPrepared(new MiniArchiveEntryInputStream(dis, fileLength), fileLength);
+                    dis.close();
+
+                    return;
+                }
+
+                dis.skipBytes(fileLength);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            MiniArchiverUtil.closeCloseable(dis);
+        }
+
+        listener.onFileNotFound();
+    }
+
+    private static String readFilePath(InputStream is, short filePathLength) throws IOException {
+        byte buf[];
+        if (filePathLength > BYTE_BUF_SIZE)
+            buf = new byte[filePathLength];
+        else
+            buf = getThreadSafeByteBuffer();
+
+        int lenRead = 0;
+        while (lenRead < filePathLength) {
+            lenRead += is.read(buf, lenRead, filePathLength - lenRead);
+        }
+
+        return new String(buf, 0, filePathLength, "utf-8");
+    }
+
 
     private final static ThreadLocal<byte[]> threadSafeByteBuf = new ThreadLocal<byte[]>();
     public static byte[] getThreadSafeByteBuffer () {
@@ -217,20 +300,5 @@ public class MiniArchiver {
             threadSafeByteBuf.set(buf);
         }
         return buf;
-    }
-
-    public static void closeCloseable(Closeable obj) {
-        try {
-            if (obj != null)
-                obj.close();
-        } catch (IOException e) { }
-    }
-
-    private static short safeReadShort (InputStream is) throws IOException {
-        int first = is.read();
-        int second = is.read();
-        if (first == -1 || second == -1)
-            return -1;
-        return (short)((first << 8) + second);
     }
 }
