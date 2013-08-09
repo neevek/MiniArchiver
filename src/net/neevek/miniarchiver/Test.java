@@ -11,14 +11,14 @@ import java.io.InputStream;
  */
 public class Test {
     public static void main(String[] args) throws Exception {
-//        testLocateFile();
-        testArchiveAndUnarchive();
+        testLocateFile();
+//        testArchiveAndUnarchive();
     }
 
     private static void testLocateFile() throws IOException {
 
         long ts = System.currentTimeMillis();
-        MiniArchiver.locateFile("/Users/xiejm/Desktop/html.mar", "html/version", new OnArchivedFileLocatedListener() {
+        MiniArchiver.locateFile("/Users/xiejm/Desktop/html.mar", "version", new OnArchivedFileLocatedListener() {
             @Override
             public void onLocated(String name, int fileLength, boolean isDirectory) {
                 System.out.println(">>>>>>>>>>>>>>>>> FOUND FILE: " + name + ", " + fileLength + ", " + isDirectory);
@@ -49,7 +49,7 @@ public class Test {
 //        MiniArchiver.archive("/Users/neevek/Desktop/html", "/Users/neevek/Desktop/a.mar", true, false);
 //        MiniArchiver.unarchive("/Users/neevek/Desktop/a.mar", "/Users/neevek/Desktop/a");
 
-        MiniArchiver.archive("/Users/xiejm/Desktop/html", "/Users/xiejm/Desktop/html.mar", true, true);
+        MiniArchiver.archive("/Users/xiejm/Desktop/html", "/Users/xiejm/Desktop/html.mar", true, false);
         MiniArchiver.unarchive("/Users/xiejm/Desktop/html.mar", "/Users/xiejm/Desktop/aaa");
     }
 

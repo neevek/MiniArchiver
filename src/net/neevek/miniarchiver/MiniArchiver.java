@@ -149,6 +149,39 @@ public class MiniArchiver {
         }
     }
 
+    public static void unarchive (InputStream rawInputStream, String outputDirPath) {
+        File outputDir = new File(outputDirPath);
+        outputDir.mkdirs();
+        unarchive(rawInputStream, outputDir);
+    }
+
+    public static void unarchive (InputStream rawInputStream, File outputDir) {
+        DataInputStream dis = null;
+        try {
+            outputDir.mkdirs();
+
+            BufferedInputStream bis = new BufferedInputStream(rawInputStream);
+            bis.mark(2);
+            int byte1 = bis.read();
+            int byte2 = bis.read();
+            bis.reset();
+
+            if (byte1 == 0x1f && (byte2 & 0xff) == 0x8b)
+                dis = new DataInputStream(new GZIPInputStream(bis));
+            else
+                dis = new DataInputStream(bis);
+
+            // ignore the version number
+            short version = dis.readShort();
+
+            unarchiveInternal(dis, outputDir);
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            MiniArchiverUtil.closeCloseable(dis);
+        }
+    }
+
     private static File newArchiveFile(String archiveFilePath) {
         File archiveFile = new File(archiveFilePath);
         if (!archiveFile.exists()) {
@@ -235,45 +268,74 @@ public class MiniArchiver {
                 dis = new DataInputStream(new GZIPInputStream(new FileInputStream(archiveFile)));
             else
                 dis = new DataInputStream(new FileInputStream(archiveFile));
-
-            // ignore the version number
-            short version = dis.readShort();
-
-            while (true) {
-                short filePathLength = MiniArchiverUtil.safeReadShort(dis);
-                if (filePathLength == -1)
-                    break;  // reach the end of file
-
-                boolean isDirectory = (filePathLength & DIR_MARK_BIT) > 0;
-                int fileLength;
-                String filePath;
-
-                if (isDirectory) {
-                    filePathLength &= MAX_FILE_PATH_LEN;
-                    filePath = readFilePath(dis, filePathLength);
-                    fileLength = 0;
-                } else {
-                    filePath = readFilePath(dis, filePathLength);
-                    fileLength = dis.readInt();
-                }
-
-                if (name.equals(filePath)) {
-                    listener.onLocated(name, fileLength, isDirectory);
-                    listener.onStreamPrepared(new MiniArchiveEntryInputStream(dis, fileLength), fileLength);
-                    dis.close();
-
-                    return;
-                }
-
-                dis.skipBytes(fileLength);
-            }
+            if (!doLocateFile(dis, name, listener))
+                listener.onFileNotFound();
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
             MiniArchiverUtil.closeCloseable(dis);
         }
+    }
 
-        listener.onFileNotFound();
+    private static boolean doLocateFile(DataInputStream dis, String name, OnArchivedFileLocatedListener listener) throws IOException {
+        // ignore the version number
+        short version = dis.readShort();
+
+        while (true) {
+            short filePathLength = MiniArchiverUtil.safeReadShort(dis);
+            if (filePathLength == -1)
+                break;  // reach the end of file
+
+            boolean isDirectory = (filePathLength & DIR_MARK_BIT) > 0;
+            int fileLength;
+            String filePath;
+
+            if (isDirectory) {
+                filePathLength &= MAX_FILE_PATH_LEN;
+                filePath = readFilePath(dis, filePathLength);
+                fileLength = 0;
+            } else {
+                filePath = readFilePath(dis, filePathLength);
+                fileLength = dis.readInt();
+            }
+
+            if (name.equals(filePath)) {
+                listener.onLocated(name, fileLength, isDirectory);
+                listener.onStreamPrepared(new MiniArchiveEntryInputStream(dis, fileLength), fileLength);
+                dis.close();
+
+                return true;
+            }
+
+            dis.skipBytes(fileLength);
+        }
+        return false;
+    }
+
+    public static void locateFile (InputStream rawInputStream, String name, OnArchivedFileLocatedListener listener) throws IOException {
+        if (listener == null)
+            throw new NullPointerException("OnArchivedFileLocatedListener is null");
+
+        DataInputStream dis = null;
+        try {
+            BufferedInputStream bis = new BufferedInputStream(rawInputStream);
+            bis.mark(2);
+            int byte1 = bis.read();
+            int byte2 = bis.read();
+            bis.reset();
+
+            if (byte1 == 0x1f && (byte2 & 0xff) == 0x8b)
+                dis = new DataInputStream(new GZIPInputStream(bis));
+            else
+                dis = new DataInputStream(bis);
+
+            if (!doLocateFile(dis, name, listener))
+                listener.onFileNotFound();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            MiniArchiverUtil.closeCloseable(dis);
+        }
     }
 
     private static String readFilePath(InputStream is, short filePathLength) throws IOException {
