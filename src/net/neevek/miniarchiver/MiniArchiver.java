@@ -215,6 +215,7 @@ public class MiniArchiver {
         }
 
         String dirPath = new String(buf, "utf-8");
+        System.out.println(">>>>>>>>>>>>>>>>>> dirpathlen: " + dirPathLength + ", " + dirPath);
         new File(outputDir, dirPath).mkdir();
     }
 
@@ -235,7 +236,12 @@ public class MiniArchiver {
         int fileLength = dis.readInt();
         FileOutputStream fos = null;
         try {
-            fos = new FileOutputStream(new File(outputDir, filePath));
+            File outputFile = new File(outputDir, filePath);
+            File parentDir = outputFile.getParentFile();
+            if (!parentDir.exists())
+                parentDir.mkdirs();
+
+            fos = new FileOutputStream(outputFile);
             buf = getThreadSafeByteBuffer();
 
             int totalRead = 0;

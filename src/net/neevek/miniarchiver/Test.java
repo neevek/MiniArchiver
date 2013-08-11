@@ -11,8 +11,8 @@ import java.io.InputStream;
  */
 public class Test {
     public static void main(String[] args) throws Exception {
-        testLocateFile();
-//        testArchiveAndUnarchive();
+//        testLocateFile();
+        testArchiveAndUnarchive();
     }
 
     private static void testLocateFile() throws IOException {
@@ -46,11 +46,11 @@ public class Test {
     }
 
     public static void testArchiveAndUnarchive() {
-//        MiniArchiver.archive("/Users/neevek/Desktop/html", "/Users/neevek/Desktop/a.mar", true, false);
-//        MiniArchiver.unarchive("/Users/neevek/Desktop/a.mar", "/Users/neevek/Desktop/a");
+//        MiniArchiver.archive("/Users/neevek/Desktop/misc", "/Users/neevek/Desktop/b.mar", true, false);
+        MiniArchiver.unarchive("/Users/neevek/Desktop/a.mar.gz", "/Users/neevek/Desktop/aaa");
 
-        MiniArchiver.archive("/Users/xiejm/Desktop/html", "/Users/xiejm/Desktop/html.mar", true, false);
-        MiniArchiver.unarchive("/Users/xiejm/Desktop/html.mar", "/Users/xiejm/Desktop/aaa");
+//        MiniArchiver.archive("/Users/xiejm/Desktop/html", "/Users/xiejm/Desktop/html.mar", true, false);
+//        MiniArchiver.unarchive("/Users/xiejm/Desktop/html.mar", "/Users/xiejm/Desktop/aaa");
     }
 
 }
