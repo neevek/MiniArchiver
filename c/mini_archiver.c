@@ -34,8 +34,8 @@ static void write_int16 (int16_t n, FILE *ar_file);
 static void write_int32 (int32_t n, FILE *ar_file);
 
 int main(int argc, const char *argv[]) {
-    archive("/Users/neevek/Desktop/misc////", "/Users/neevek/Desktop/a.mar", 1);
-    /*archive("/Users/neevek/Desktop/test////", "/Users/neevek/Desktop/a.mar", 1);*/
+    /*archive("/Users/neevek/Desktop/misc////", "/Users/neevek/Desktop/a.mar", 1);*/
+    archive("/Users/xiejm/Desktop/html////", "/Users/xiejm/Desktop/html.mar", 1);
     return 0;
 }
 
@@ -81,10 +81,6 @@ void archive_internal (const char *root_path, FILE *ar_file, int compress) {
         --root_path_len;
     }
 
-#if defined(DEBUG)
-    printf(">>> archive_internal path: %s\n", ar_root_path);
-#endif
-
     struct stat stat_buf;
     if (get_file_stat(ar_root_path, &stat_buf)) {
         if (is_dir(&stat_buf)) {
@@ -108,7 +104,7 @@ void archive_dir (const char *dir_path, int path_start_idx, FILE *ar_file, int c
         write_path_name(dir_path + path_start_idx, 1, ar_file);
 
 #if defined(DEBUG)
-    printf(">>> archived dir: %s\n", dir_path + path_start_idx);
+    printf("archiving dir: %s\n", dir_path + path_start_idx);
 #endif
 
         size_t dir_len = strlen(dir_path);
@@ -143,7 +139,7 @@ void archive_file(const char *file_path, int path_start_idx, FILE *ar_file, int 
         write_file(file_path, ar_file);
 
 #if defined(DEBUG)
-        printf(">>> archived file: %lld = %s\n", stat_buf.st_size, file_path);
+        printf("archiving file: (%lld) %s\n", stat_buf.st_size, file_path);
 #endif
     }
 }
@@ -153,23 +149,13 @@ void write_int8 (int8_t n, FILE *ar_file) {
 }
 
 void write_int16 (int16_t n, FILE *ar_file) {
-    /*fwrite(&n, 2, 1, ar_file);*/
-    int8_t b = n >> 8;
-    fwrite(&b, 1, 1, ar_file);
-    b = n;
-    fwrite(&b, 1, 1, ar_file);
+    /*n = (n >> 8) & 0xff | (n << 8) & 0xff00;*/
+    fwrite(&n, 2, 1, ar_file);
 }
 
 void write_int32 (int32_t n, FILE *ar_file) {
-    /*fwrite(&n, 4, 1, ar_file);*/
-    int8_t b = n >> 24;
-    fwrite(&b, 1, 1, ar_file);
-    b = n >> 16;
-    fwrite(&b, 1, 1, ar_file);
-    b = n >> 8;
-    fwrite(&b, 1, 1, ar_file);
-    b = n;
-    fwrite(&b, 1, 1, ar_file);
+    /*n = (n >> 24) | ((n >> 8) & 0xff00) | ((n << 8) & 0xff0000) | n << 24;*/
+    fwrite(&n, 4, 1, ar_file);
 }
 
 void write_path_name (const char *path_name, int is_dir, FILE *ar_file) {
