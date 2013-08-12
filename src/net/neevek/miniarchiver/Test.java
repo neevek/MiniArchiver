@@ -1,7 +1,6 @@
 package net.neevek.miniarchiver;
 
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 
 /**
  * Created with IntelliJ IDEA.
@@ -47,7 +46,8 @@ public class Test {
 
     public static void testArchiveAndUnarchive() {
 //        MiniArchiver.archive("/Users/neevek/Desktop/misc", "/Users/neevek/Desktop/b.mar", true, false);
-        MiniArchiver.unarchive("/Users/neevek/Desktop/a.mar.gz", "/Users/neevek/Desktop/aaa");
+//        MiniArchiver.unarchive("/Users/neevek/Desktop/a.mar.gz", "/Users/neevek/Desktop/aaa");
+        MiniArchiver.unarchive("/Users/xiejm/Desktop/html.mar.gz", "/Users/xiejm/Desktop/myhtml");
 
 //        MiniArchiver.archive("/Users/xiejm/Desktop/html", "/Users/xiejm/Desktop/html.mar", true, false);
 //        MiniArchiver.unarchive("/Users/xiejm/Desktop/html.mar", "/Users/xiejm/Desktop/aaa");

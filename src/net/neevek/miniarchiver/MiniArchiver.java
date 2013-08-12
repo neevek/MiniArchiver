@@ -24,7 +24,7 @@ import java.util.zip.GZIPOutputStream;
 public class MiniArchiver {
     private final static short MAX_FILE_PATH_LEN = 0xffff >> 1;
     private final static int DIR_MARK_BIT = 1 << 15;
-    private final static int VERSION = 1;
+    private final static int VERSION = 65535;
     private final static int BYTE_BUF_SIZE = 1024 * 4;
 
     // ************* Archive related code *************
@@ -45,7 +45,7 @@ public class MiniArchiver {
                 dos = new DataOutputStream(new GZIPOutputStream(new FileOutputStream(outputFile)));
             else
                 dos = new DataOutputStream(new FileOutputStream(outputFile));
-            dos.writeShort(VERSION);
+            MiniArchiverUtil.writeLittleEndianShort((short) VERSION, dos);
             archiveInternal(rootDir, dos, pathStartIndex);
         } catch (IOException e) {
             e.printStackTrace();
@@ -78,7 +78,7 @@ public class MiniArchiver {
         byte[] pathBytes = path.getBytes("utf-8");
         checkFilePathLength(pathBytes.length);
 
-        dos.writeShort(DIR_MARK_BIT | (short)pathBytes.length);
+        MiniArchiverUtil.writeLittleEndianShort((short) (DIR_MARK_BIT | (short) pathBytes.length), dos);
         dos.write(pathBytes);
     }
 
@@ -90,9 +90,9 @@ public class MiniArchiver {
         byte[] pathBytes = path.getBytes("utf-8");
         checkFilePathLength(pathBytes.length);
 
-        dos.writeShort((short) pathBytes.length);
+        MiniArchiverUtil.writeLittleEndianShort((short) pathBytes.length, dos);
         dos.write(pathBytes);
-        dos.writeInt((int) curFile.length());
+        MiniArchiverUtil.writeLittleEndianInt((int) curFile.length(), dos);
         writeFile(curFile, dos);
 
     }
@@ -139,7 +139,7 @@ public class MiniArchiver {
                 dis = new DataInputStream(new FileInputStream(archiveFile));
 
             // ignore the version number
-            short version = dis.readShort();
+            short version = MiniArchiverUtil.readLittleEndianShort(dis);
 
             unarchiveInternal(dis, outputDir);
         } catch (IOException e) {
@@ -172,7 +172,7 @@ public class MiniArchiver {
                 dis = new DataInputStream(bis);
 
             // ignore the version number
-            short version = dis.readShort();
+            short version = MiniArchiverUtil.readLittleEndianShort(dis);
 
             unarchiveInternal(dis, outputDir);
         } catch (IOException e) {
@@ -215,7 +215,6 @@ public class MiniArchiver {
         }
 
         String dirPath = new String(buf, "utf-8");
-        System.out.println(">>>>>>>>>>>>>>>>>> dirpathlen: " + dirPathLength + ", " + dirPath);
         new File(outputDir, dirPath).mkdir();
     }
 
@@ -233,7 +232,7 @@ public class MiniArchiver {
 
         String filePath = new String(buf, 0, filePathLength, "utf-8");
 
-        int fileLength = dis.readInt();
+        int fileLength = MiniArchiverUtil.readLittleEndianInt(dis);
         FileOutputStream fos = null;
         try {
             File outputFile = new File(outputDir, filePath);
@@ -285,7 +284,7 @@ public class MiniArchiver {
 
     private static boolean doLocateFile(DataInputStream dis, String name, OnArchivedFileLocatedListener listener) throws IOException {
         // ignore the version number
-        short version = dis.readShort();
+        short version = MiniArchiverUtil.readLittleEndianShort(dis);
 
         while (true) {
             short filePathLength = MiniArchiverUtil.safeReadShort(dis);
@@ -302,7 +301,7 @@ public class MiniArchiver {
                 fileLength = 0;
             } else {
                 filePath = readFilePath(dis, filePathLength);
-                fileLength = dis.readInt();
+                fileLength = MiniArchiverUtil.readLittleEndianInt(dis);
             }
 
             if (name.equals(filePath)) {
@@ -358,7 +357,6 @@ public class MiniArchiver {
 
         return new String(buf, 0, filePathLength, "utf-8");
     }
-
 
     private final static ThreadLocal<byte[]> threadSafeByteBuf = new ThreadLocal<byte[]>();
     public static byte[] getThreadSafeByteBuffer () {
