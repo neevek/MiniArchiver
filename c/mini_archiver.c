@@ -4,6 +4,8 @@
 #include <unistd.h> /* for getopt */
 #include <string.h> /* for strlen */
 #include <sys/stat.h> /* for lstat */
+#include <sys/types.h>
+#include <errno.h>
 #include <dirent.h>
 #include <stdlib.h>
 
@@ -23,7 +25,14 @@ static void archive_dir (const char *dir_path, int path_start_idx, FILE *ar_file
 static void archive_file(const char *file_path, int path_start_idx, FILE *ar_file, int compress);
 static char *make_path_name(const char *dir, size_t dir_len, const char *path_name, size_t path_name_len);
 static void write_path_name (const char *path_name, int is_dir, FILE *ar_file);
-static void write_file (const char *if_name, FILE *ar_file);
+static void write_file (const char *if_name, FILE *out_file);
+
+static void unarchive (const char *ar_file_path, const char *output_dir);
+static void unarchive_internal (FILE *ar_file, const char *output_dir);
+static void unarchive_dir (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len);
+static void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len);
+static const char *read_unarchived_path (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len);
+static void mkdirs (const char *dir);
 
 static int get_file_stat(const char *if_name, struct stat *stat_buf);
 static int is_file(struct stat *stat_buf);
@@ -32,10 +41,14 @@ static int is_dir(struct stat *stat_buf);
 static void write_int8 (int8_t n, FILE *ar_file);
 static void write_int16 (int16_t n, FILE *ar_file);
 static void write_int32 (int32_t n, FILE *ar_file);
+static int16_t read_int16 (FILE *ar_file);
+static int32_t read_int32 (FILE *ar_file);
 
 int main(int argc, const char *argv[]) {
     /*archive("/Users/neevek/Desktop/misc////", "/Users/neevek/Desktop/a.mar", 1);*/
-    archive("/Users/xiejm/Desktop/html////", "/Users/xiejm/Desktop/html.mar", 1);
+    /*archive("/Users/neevek/Desktop/html////", "/Users/neevek/Desktop/html.mar", 1);*/
+    char output_dir[] = "/Users/neevek/Desktop/testout";
+    unarchive("/Users/neevek/Desktop/html.mar", output_dir);
     return 0;
 }
 
@@ -158,6 +171,20 @@ void write_int32 (int32_t n, FILE *ar_file) {
     fwrite(&n, 4, 1, ar_file);
 }
 
+int16_t read_int16 (FILE *ar_file) {
+    int16_t n;
+    if (fread(&n, 2, 1, ar_file) <= 0)
+        return 0;
+    return n;
+}
+
+int32_t read_int32 (FILE *ar_file) {
+    int32_t n;
+    if (fread(&n, 4, 1, ar_file) <= 0)
+        return 0;
+    return n;
+}
+
 void write_path_name (const char *path_name, int is_dir, FILE *ar_file) {
     size_t len = strlen(path_name);
     if (is_dir)
@@ -168,19 +195,19 @@ void write_path_name (const char *path_name, int is_dir, FILE *ar_file) {
     fwrite(path_name, 1, len, ar_file);
 }
 
-void write_file (const char *if_name, FILE *ar_file) {
+void write_file (const char *if_name, FILE *out_file) {
     FILE *infile = fopen(if_name, "rb");
     size_t len_read;
     while (!feof(infile)) {
         len_read = fread(buffer, 1, BYTE_BUF_SIZE, infile);
-        fwrite(buffer, 1, len_read, ar_file);
+        fwrite(buffer, 1, len_read, out_file);
     }
     fclose(infile);
 }
 
 int get_file_stat(const char *if_name, struct stat *stat_buf) {
     if (lstat(if_name, stat_buf) != 0) {
-        perror("write_file"); 
+        perror("get_file_stat"); 
         return 0;
     }
     return 1;
@@ -202,4 +229,165 @@ char *make_path_name(const char *dir, size_t dir_len, const char *path_name, siz
     strcat(new_path_name, path_name);
 
     return new_path_name;
+}
+
+
+/* unarchive related code */
+
+void unarchive (const char *ar_file_path, const char *output_dir) {
+    FILE *ar_file = fopen(ar_file_path, "rb");
+    if (!ar_file) {
+        perror("unarchive"); 
+        return;
+    }
+
+#if defined(DEBUG)
+    printf("unarchiving: '%s' to '%s'\n", ar_file_path, output_dir);
+#endif
+
+    /* ensures the output_dir exists */
+    mkdirs(output_dir);
+
+    /*struct stat stat_buf;*/
+    /*if (get_file_stat(output_dir, &stat_buf) != 0 */
+            /*|| !is_dir(&stat_buf)) {*/
+        /*fprintf(stderr, "%s is not a directory", output_dir);*/
+        /*return;*/
+    /*}*/
+
+
+    uint8_t byte1, byte2;
+    fread(&byte1, 1, 1, ar_file);
+    fread(&byte2, 1, 1, ar_file);
+
+    fseek(ar_file, 0, SEEK_SET);
+    
+    if (byte1 == 0x1f && (byte2 & 0xff) == 0x8b) {
+        /* handle gzip */
+    }
+
+    /*ignore the version number*/
+    short version = read_int16(ar_file);
+
+#if defined(DEBUG)
+    printf("unarchiving: %s, version=%d\n", ar_file_path, version);
+#endif
+
+    unarchive_internal(ar_file, output_dir);
+
+    fclose(ar_file);
+}
+
+void unarchive_internal (FILE *ar_file, const char *output_dir) {
+    size_t dir_len = strlen(output_dir);
+    while (1) {
+        int16_t path_len = read_int16(ar_file);         
+
+#if defined(DEBUG)
+    printf("unarchive_internal: len=%d\n", path_len);
+#endif
+        if (path_len == 0)
+            break;  /* reach the end of the archive */
+
+        if ((path_len & DIR_MARK_BIT) > 0) {
+            unarchive_dir(ar_file, output_dir, dir_len, (path_len & MAX_FILE_PATH_LEN));        
+        } else {
+            unarchive_file(ar_file, output_dir, dir_len, MAX_FILE_PATH_LEN);        
+        }
+    }
+}
+
+void unarchive_dir (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len) {
+    const char *new_path = read_unarchived_path(ar_file, output_dir, dir_len, path_len);
+
+#if defined(DEBUG)
+    printf("unarchiving dir: %s\n", new_path);
+#endif
+
+    if (mkdir(output_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
+        fprintf(stderr, "create dir '%s' failed: %s\n", output_dir, strerror(errno));
+        exit(1);
+    }   
+
+    free(new_path);
+}
+
+void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len) {
+    const char *new_path = read_unarchived_path(ar_file, output_dir, dir_len, path_len);
+
+#if defined(DEBUG)
+    printf("unarchiving file: %s\n", new_path);
+#endif
+
+    char *last_slash = strrchr(new_path, '/');
+    if (last_slash && last_slash != new_path) {
+        *last_slash = '\0';
+        mkdirs(new_path);
+        *last_slash = '/';
+    }
+
+    int32_t file_len = read_int32(ar_file);
+
+
+    FILE *out_file = fopen(new_path, "wb");
+    if (out_file) {
+        size_t len_read;
+        while (!feof(ar_file)) {
+            len_read = fread(buffer, 1, BYTE_BUF_SIZE, ar_file);
+            fwrite(buffer, 1, len_read, out_file);
+        }
+        fclose(out_file);
+    } else {
+        fprintf(stderr, "Failed to open '%s' for write.", new_path);
+    }
+
+    free(new_path);
+}
+
+const char *read_unarchived_path (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len) {
+    int len = dir_len + 1 + path_len + 1;
+    char *new_path = (char *) malloc(len);
+    new_path[0] = '\0';
+    strcat(new_path, output_dir);
+    strcat(new_path, "/");
+    new_path[len - 1] = '\0';
+
+    size_t len_read = 0;
+    while (len_read < path_len) {
+        char *path_pointer = new_path + dir_len + 1 + len_read;
+        len_read += fread(path_pointer, 1, path_len - len_read, ar_file); 
+    }
+
+    printf("new path: %s\n", new_path);
+    return new_path;
+}
+
+void mkdirs (const char *dir) {
+    char *ch = dir, *last_ch;
+
+    while (*ch == '/') {
+        ++ch;
+    }   
+
+    while (ch = strchr(ch, '/')) {
+        while (*(ch + 1) == '/') {
+            ++ch;
+        }   
+        *ch = '\0';
+        if (mkdir(dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
+            fprintf(stderr, "create dir '%s' failed: %s\n", dir, strerror(errno));
+
+            *ch = '/';
+            exit(1);
+        }   
+
+        *ch = '/';
+        ++ch;
+        last_ch = ch; 
+    }   
+
+    if (*last_ch != '\0' && mkdir(dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
+        fprintf(stderr, "create dir '%s' failed: %s\n", dir, strerror(errno));
+        exit(1);
+    }   
 }
