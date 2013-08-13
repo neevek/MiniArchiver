@@ -12,51 +12,47 @@
 #define MAX_FILE_PATH_LEN (0xffff >> 1)
 #define DIR_MARK_BIT (1 << 15)
 #define VERSION 1
-#define BYTE_BUF_SIZE (1024 * 4)
+#define BUFFER_SIZE (1024 * 32)
 
 #define DEBUG
 
-uint8_t buffer[BYTE_BUF_SIZE];
-char real_path_buffer[FILENAME_MAX];
-
 static void archive (const char *root_path, const char *ar_file_path, int compress);
-static void archive_internal (const char *root_path, FILE *ar_file, int compress);
-static void archive_dir (const char *dir_path, int path_start_idx, FILE *ar_file, int compress);
-static void archive_file(const char *file_path, int path_start_idx, FILE *ar_file, int compress);
+static void archive_internal (const char *root_path, int compress);
+static void archive_dir (const char *dir_path, int path_start_idx, int compress);
+static void archive_file(const char *file_path, int path_start_idx, int compress);
 static char *make_path_name(const char *dir, size_t dir_len, const char *path_name, size_t path_name_len);
-static void write_path_name (const char *path_name, int is_dir, FILE *ar_file);
-static void write_file (const char *if_name, FILE *out_file);
+static void write_path_name (const char *path_name, int is_dir);
+static void write_file (const char *if_name);
 
 static void unarchive (const char *ar_file_path, const char *output_dir);
-static void unarchive_internal (FILE *ar_file, const char *output_dir);
-static void unarchive_dir (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len);
-static void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len);
-static const char *read_unarchived_path (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len);
+static void unarchive_internal (const char *output_dir);
+static void unarchive_dir (const char *output_dir, size_t dir_len, int16_t path_len);
+static void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len);
+static const char *read_unarchived_path (const char *output_dir, size_t dir_len, int16_t path_len);
 static void mkdirs (const char *dir);
 
 static int get_file_stat(const char *if_name, struct stat *stat_buf);
 static int is_file(struct stat *stat_buf);
 static int is_dir(struct stat *stat_buf);
 
-static void write_int8 (int8_t n, FILE *ar_file);
-static void write_int16 (int16_t n, FILE *ar_file);
-static void write_int32 (int32_t n, FILE *ar_file);
-static int16_t read_int16 (FILE *ar_file);
-static int32_t read_int32 (FILE *ar_file);
+static void write_int8 (int8_t n);
+static void write_int16 (int16_t n);
+static void write_int32 (int32_t n);
+static int16_t read_int16 ();
+static int32_t read_int32 ();
 
-int main(int argc, const char *argv[]) {
-    /*archive("/Users/neevek/Desktop/misc////", "/Users/neevek/Desktop/a.mar", 1);*/
-    archive("/Users/xiejm/Desktop/testmar/html/", "/Users/xiejm/Desktop/testmar/html.mar", 1);
-    unarchive("/Users/xiejm/Desktop/testmar/html.mar", "/Users/xiejm/Desktop/testmar/outhtml");
-    return 0;
-}
+/*static void write_int16_le (int16_t n);*/
+/*static void write_int32_le (int32_t n);*/
+
+static uint8_t buffer[BUFFER_SIZE];
+static FILE *ar_file;
 
 void archive (const char *root_path, const char *ar_file_path, int compress) {
-    FILE *ar_file = fopen(ar_file_path, "wb");
+    ar_file = fopen(ar_file_path, "wb");
     if (ar_file) {
-        write_int16(VERSION, ar_file);
+        write_int16(VERSION);
 
-        archive_internal(root_path, ar_file, 1);
+        archive_internal(root_path, 1);
         
         fclose(ar_file);
     } else {
@@ -64,7 +60,7 @@ void archive (const char *root_path, const char *ar_file_path, int compress) {
     }
 }
 
-void archive_internal (const char *root_path, FILE *ar_file, int compress) {
+void archive_internal (const char *root_path, int compress) {
     if (strstr(root_path, "..")) {
         fprintf(stderr, "Error: Path '%s' contains '..'\n", root_path);
         return;
@@ -96,9 +92,9 @@ void archive_internal (const char *root_path, FILE *ar_file, int compress) {
     struct stat stat_buf;
     if (get_file_stat(ar_root_path, &stat_buf)) {
         if (is_dir(&stat_buf)) {
-            archive_dir(ar_root_path, path_start_idx, ar_file, compress);
+            archive_dir(ar_root_path, path_start_idx, compress);
         } else if (is_file(&stat_buf)) {
-            archive_file(ar_root_path, path_start_idx, ar_file, compress);
+            archive_file(ar_root_path, path_start_idx, compress);
         } else {
             fprintf(stderr, "Warning: Not a regular file or directory: %s\n", root_path); 
         }
@@ -109,11 +105,11 @@ void archive_internal (const char *root_path, FILE *ar_file, int compress) {
     free(ar_root_path);
 }
 
-void archive_dir (const char *dir_path, int path_start_idx, FILE *ar_file, int compress) {
+void archive_dir (const char *dir_path, int path_start_idx, int compress) {
     DIR *dir;
     struct dirent *ent;
     if ((dir = opendir (dir_path)) != NULL) {
-        write_path_name(dir_path + path_start_idx, 1, ar_file);
+        write_path_name(dir_path + path_start_idx, 1); 
 
 #if defined(DEBUG)
     printf("archiving dir: %s\n", dir_path + path_start_idx);
@@ -126,14 +122,14 @@ void archive_dir (const char *dir_path, int path_start_idx, FILE *ar_file, int c
                 if (strcmp(ent->d_name, ".") != 0 && strcmp(ent->d_name, "..") != 0) {
                     char *new_path_name = make_path_name(dir_path, dir_len, ent->d_name, ent->d_namlen);
 
-                    archive_dir(new_path_name, path_start_idx, ar_file, compress); 
+                    archive_dir(new_path_name, path_start_idx, compress); 
 
                     free(new_path_name);
                 }
             } else if ((ent->d_type & DT_REG) > 0) {
                 char *new_path_name = make_path_name(dir_path, dir_len, ent->d_name, ent->d_namlen);
 
-                archive_file(new_path_name, path_start_idx, ar_file, compress);
+                archive_file(new_path_name, path_start_idx, compress);
 
                 free(new_path_name);
             }
@@ -142,13 +138,13 @@ void archive_dir (const char *dir_path, int path_start_idx, FILE *ar_file, int c
     }  
 }
 
-void archive_file(const char *file_path, int path_start_idx, FILE *ar_file, int compress) {
-    write_path_name(file_path + path_start_idx, 0, ar_file);
+void archive_file(const char *file_path, int path_start_idx, int compress) {
+    write_path_name(file_path + path_start_idx, 0);
 
     struct stat stat_buf;    
     if (get_file_stat(file_path, &stat_buf)) {
-        write_int32(stat_buf.st_size, ar_file);
-        write_file(file_path, ar_file);
+        write_int32(stat_buf.st_size);
+        write_file(file_path);
 
 #if defined(DEBUG)
         printf("archiving file: (%lld) %s\n", stat_buf.st_size, file_path);
@@ -156,50 +152,50 @@ void archive_file(const char *file_path, int path_start_idx, FILE *ar_file, int 
     }
 }
 
-void write_int8 (int8_t n, FILE *ar_file) {
+void write_int8 (int8_t n) {
     fwrite(&n, 1, 1, ar_file);
 }
 
-void write_int16 (int16_t n, FILE *ar_file) {
+void write_int16 (int16_t n) {
     /*n = (n >> 8) & 0xff | (n << 8) & 0xff00;*/
     fwrite(&n, 2, 1, ar_file);
 }
 
-void write_int32 (int32_t n, FILE *ar_file) {
+void write_int32 (int32_t n) {
     /*n = (n >> 24) | ((n >> 8) & 0xff00) | ((n << 8) & 0xff0000) | n << 24;*/
     fwrite(&n, 4, 1, ar_file);
 }
 
-int16_t read_int16 (FILE *ar_file) {
+int16_t read_int16 () {
     int16_t n;
     if (fread(&n, 2, 1, ar_file) <= 0)
         return 0;
     return n;
 }
 
-int32_t read_int32 (FILE *ar_file) {
+int32_t read_int32 () {
     int32_t n;
     if (fread(&n, 4, 1, ar_file) <= 0)
         return 0;
     return n;
 }
 
-void write_path_name (const char *path_name, int is_dir, FILE *ar_file) {
+void write_path_name (const char *path_name, int is_dir) {
     size_t len = strlen(path_name);
     if (is_dir)
-        write_int16(len | DIR_MARK_BIT, ar_file);
+        write_int16(len | DIR_MARK_BIT);
     else
-        write_int16(len, ar_file);
+        write_int16(len);
 
     fwrite(path_name, 1, len, ar_file);
 }
 
-void write_file (const char *if_name, FILE *out_file) {
+void write_file (const char *if_name) {
     FILE *infile = fopen(if_name, "rb");
     size_t len_read;
     while (!feof(infile)) {
-        len_read = fread(buffer, 1, BYTE_BUF_SIZE, infile);
-        fwrite(buffer, 1, len_read, out_file);
+        len_read = fread(buffer, 1, BUFFER_SIZE, infile);
+        fwrite(buffer, 1, len_read, ar_file);
     }
     fclose(infile);
 }
@@ -234,7 +230,7 @@ char *make_path_name(const char *dir, size_t dir_len, const char *path_name, siz
 /* unarchive related code */
 
 void unarchive (const char *ar_file_path, const char *output_dir) {
-    FILE *ar_file = fopen(ar_file_path, "rb");
+    ar_file = fopen(ar_file_path, "rb");
     if (!ar_file) {
         perror("unarchive"); 
         return;
@@ -262,35 +258,35 @@ void unarchive (const char *ar_file_path, const char *output_dir) {
     }
 
     /*ignore the version number*/
-    short version = read_int16(ar_file);
+    short version = read_int16();
 
 #if defined(DEBUG)
     printf("unarchiving: %s, version=%d\n", ar_file_path, version);
 #endif
 
-    unarchive_internal(ar_file, output_dir_cpy);
+    unarchive_internal(output_dir_cpy);
 
     fclose(ar_file);
     free(output_dir_cpy);
 }
 
-void unarchive_internal (FILE *ar_file, const char *output_dir) {
+void unarchive_internal (const char *output_dir) {
     size_t dir_len = strlen(output_dir);
     while (1) {
-        int16_t path_len = read_int16(ar_file);         
+        int16_t path_len = read_int16();         
         if (path_len == 0)
             break;  /* reach the end of the archive */
 
         if ((path_len & DIR_MARK_BIT) > 0) {
-            unarchive_dir(ar_file, output_dir, dir_len, (path_len & MAX_FILE_PATH_LEN));        
+            unarchive_dir(output_dir, dir_len, (path_len & MAX_FILE_PATH_LEN));        
         } else {
-            unarchive_file(ar_file, output_dir, dir_len, path_len);        
+            unarchive_file(output_dir, dir_len, path_len);        
         }
     }
 }
 
-void unarchive_dir (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len) {
-    const char *new_path = read_unarchived_path(ar_file, output_dir, dir_len, path_len);
+void unarchive_dir (const char *output_dir, size_t dir_len, int16_t path_len) {
+    const char *new_path = read_unarchived_path(output_dir, dir_len, path_len);
 
 #if defined(DEBUG)
     printf("unarchiving DIR: (%d), %s\n", path_len, new_path);
@@ -304,8 +300,8 @@ void unarchive_dir (FILE *ar_file, const char *output_dir, size_t dir_len, int16
     free(new_path);
 }
 
-void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len) {
-    const char *new_path = read_unarchived_path(ar_file, output_dir, dir_len, path_len);
+void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
+    const char *new_path = read_unarchived_path(output_dir, dir_len, path_len);
 
 
     char *last_slash = strrchr(new_path, '/');
@@ -315,7 +311,7 @@ void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int1
         *last_slash = '/';
     }
 
-    int32_t file_len = read_int32(ar_file);
+    int32_t file_len = read_int32();
 
 #if defined(DEBUG)
     printf("unarchiving FILE: (%d), %s\n", file_len, new_path);
@@ -327,7 +323,7 @@ void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int1
         while (total_read < file_len) {
             rest = file_len - total_read;
 
-            len_read = fread(buffer, 1, rest < BYTE_BUF_SIZE ? rest : BYTE_BUF_SIZE, ar_file);
+            len_read = fread(buffer, 1, rest < BUFFER_SIZE ? rest : BUFFER_SIZE, ar_file);
             total_read += len_read;
             fwrite(buffer, 1, len_read, out_file);
         }
@@ -339,7 +335,7 @@ void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int1
     free(new_path);
 }
 
-const char *read_unarchived_path (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len) {
+const char *read_unarchived_path (const char *output_dir, size_t dir_len, int16_t path_len) {
     int len = dir_len + 1 + path_len + 1;
     char *new_path = (char *) malloc(len);
     new_path[0] = '\0';
@@ -384,4 +380,13 @@ void mkdirs (const char *dir) {
         fprintf(stderr, "create dir '%s' failed: %s\n", dir, strerror(errno));
         exit(1);
     }   
+}
+
+
+int main(int argc, const char *argv[]) {
+    /*archive("/Users/xiejm/Desktop/testmar/html/", "/Users/xiejm/Desktop/testmar/html.mar", 1);*/
+    /*unarchive("/Users/xiejm/Desktop/testmar/html.mar", "/Users/xiejm/Desktop/testmar/outhtml");*/
+    archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);
+    unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");
+    return 0;
 }
