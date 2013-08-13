@@ -13,6 +13,7 @@
 #define DIR_MARK_BIT (1 << 15)
 #define VERSION 1
 #define BUFFER_SIZE (1024 * 32)
+#define SMALL_BUFFER_SIZE (1024 * 4)
 
 #define DEBUG
 
@@ -20,9 +21,10 @@ static void archive (const char *root_path, const char *ar_file_path, int compre
 static void archive_internal (const char *root_path, int compress);
 static void archive_dir (const char *dir_path, int path_start_idx, int compress);
 static void archive_file(const char *file_path, int path_start_idx, int compress);
-static char *make_path_name(const char *dir, size_t dir_len, const char *path_name, size_t path_name_len);
+static const char *make_path_name(const char *dir, size_t dir_len, const char *path_name, size_t path_name_len);
 static void write_path_name (const char *path_name, int is_dir);
 static void write_file (const char *if_name);
+static void flush ();
 
 static void unarchive (const char *ar_file_path, const char *output_dir);
 static void unarchive_internal (const char *output_dir);
@@ -38,13 +40,17 @@ static int is_dir(struct stat *stat_buf);
 static void write_int8 (int8_t n);
 static void write_int16 (int16_t n);
 static void write_int32 (int32_t n);
+static void write_bytes (char *data, size_t len);
 static int16_t read_int16 ();
 static int32_t read_int32 ();
 
-/*static void write_int16_le (int16_t n);*/
-/*static void write_int32_le (int32_t n);*/
+static void write_int16_le (int16_t n);
+static void write_int32_le (int32_t n);
 
-static uint8_t buffer[BUFFER_SIZE];
+
+static char buffer[BUFFER_SIZE];
+static char small_buffer[SMALL_BUFFER_SIZE];
+static uint16_t buf_idx = 0;
 static FILE *ar_file;
 
 void archive (const char *root_path, const char *ar_file_path, int compress) {
@@ -53,6 +59,7 @@ void archive (const char *root_path, const char *ar_file_path, int compress) {
         write_int16(VERSION);
 
         archive_internal(root_path, 1);
+        flush();
         
         fclose(ar_file);
     } else {
@@ -152,18 +159,66 @@ void archive_file(const char *file_path, int path_start_idx, int compress) {
     }
 }
 
+void flush () {
+    size_t len_written = 0;
+    while (buf_idx > 0) {
+        len_written += fwrite(buffer + len_written, 1, buf_idx, ar_file);
+        buf_idx -= len_written;
+    }
+}
+
+void write_bytes (char *data, size_t len) {
+    if (buf_idx + len <= BUFFER_SIZE) {
+        memcpy(buffer + buf_idx, data, len); 
+        buf_idx += len;
+    } else {
+        while (len > 0) {
+            size_t tmp_len = BUFFER_SIZE - buf_idx;
+            if (tmp_len > len)
+                tmp_len = len;
+            memcpy(buffer + buf_idx, data, tmp_len); 
+            buf_idx + tmp_len;
+            len -= tmp_len;
+
+            flush();
+        }
+    }
+}
+
 void write_int8 (int8_t n) {
     fwrite(&n, 1, 1, ar_file);
 }
 
 void write_int16 (int16_t n) {
     /*n = (n >> 8) & 0xff | (n << 8) & 0xff00;*/
-    fwrite(&n, 2, 1, ar_file);
+    /*fwrite(&n, 2, 1, ar_file);*/
+    write_int16_le(n);
 }
 
 void write_int32 (int32_t n) {
     /*n = (n >> 24) | ((n >> 8) & 0xff00) | ((n << 8) & 0xff0000) | n << 24;*/
-    fwrite(&n, 4, 1, ar_file);
+    /*fwrite(&n, 4, 1, ar_file);*/
+    write_int32_le(n);
+}
+
+void write_int16_le (int16_t n) {
+    if (buf_idx + 2 > BUFFER_SIZE) {
+        flush();        
+    }
+    buffer[buf_idx] = n & 0xff;
+    buffer[buf_idx + 1] = (n >> 8) & 0xff;
+    buf_idx += 2;
+}
+
+void write_int32_le (int32_t n) {
+    if (buf_idx + 4 > BUFFER_SIZE) {
+        flush();        
+    }
+    buffer[buf_idx] = n & 0xff;
+    buffer[buf_idx + 1] = (n >> 8) & 0xff;
+    buffer[buf_idx + 2] = (n >> 16) & 0xff;
+    buffer[buf_idx + 3] = (n >> 24) & 0xff;
+    buf_idx += 4;
 }
 
 int16_t read_int16 () {
@@ -187,15 +242,17 @@ void write_path_name (const char *path_name, int is_dir) {
     else
         write_int16(len);
 
-    fwrite(path_name, 1, len, ar_file);
+    write_bytes(path_name, len);
+    /*fwrite(path_name, 1, len, ar_file);*/
 }
 
 void write_file (const char *if_name) {
     FILE *infile = fopen(if_name, "rb");
     size_t len_read;
     while (!feof(infile)) {
-        len_read = fread(buffer, 1, BUFFER_SIZE, infile);
-        fwrite(buffer, 1, len_read, ar_file);
+        len_read = fread(small_buffer, 1, SMALL_BUFFER_SIZE, infile);
+        write_bytes(small_buffer, len_read);
+        /*fwrite(buffer, 1, len_read, ar_file);*/
     }
     fclose(infile);
 }
@@ -216,7 +273,7 @@ int is_dir(struct stat *stat_buf) {
     return (stat_buf->st_mode & S_IFMT) == S_IFDIR;
 }
 
-char *make_path_name(const char *dir, size_t dir_len, const char *path_name, size_t path_name_len) {
+const char *make_path_name(const char *dir, size_t dir_len, const char *path_name, size_t path_name_len) {
     char *new_path_name = (char *) malloc(dir_len + 1 + path_name_len + 1);
     new_path_name[0] = '\0';
     strcat(new_path_name, dir);
@@ -323,9 +380,10 @@ void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
         while (total_read < file_len) {
             rest = file_len - total_read;
 
-            len_read = fread(buffer, 1, rest < BUFFER_SIZE ? rest : BUFFER_SIZE, ar_file);
+            len_read = fread(small_buffer, 1, rest < SMALL_BUFFER_SIZE ? rest : SMALL_BUFFER_SIZE, ar_file);
             total_read += len_read;
-            fwrite(buffer, 1, len_read, out_file);
+            /*fwrite(buffer, 1, len_read, out_file);*/
+            write_bytes(small_buffer, len_read);
         }
         fclose(out_file);
     } else {
@@ -387,6 +445,6 @@ int main(int argc, const char *argv[]) {
     /*archive("/Users/xiejm/Desktop/testmar/html/", "/Users/xiejm/Desktop/testmar/html.mar", 1);*/
     /*unarchive("/Users/xiejm/Desktop/testmar/html.mar", "/Users/xiejm/Desktop/testmar/outhtml");*/
     archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);
-    unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");
+    /*unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");*/
     return 0;
 }
