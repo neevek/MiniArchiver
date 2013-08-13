@@ -11,7 +11,7 @@
 
 #define MAX_FILE_PATH_LEN (0xffff >> 1)
 #define DIR_MARK_BIT (1 << 15)
-#define VERSION 1234
+#define VERSION 1
 #define BYTE_BUF_SIZE (1024 * 4)
 
 #define DEBUG
@@ -46,9 +46,8 @@ static int32_t read_int32 (FILE *ar_file);
 
 int main(int argc, const char *argv[]) {
     /*archive("/Users/neevek/Desktop/misc////", "/Users/neevek/Desktop/a.mar", 1);*/
-    /*archive("/Users/neevek/Desktop/html////", "/Users/neevek/Desktop/html.mar", 1);*/
-    char output_dir[] = "/Users/neevek/Desktop/testout";
-    unarchive("/Users/neevek/Desktop/html.mar", output_dir);
+    archive("/Users/xiejm/Desktop/testmar/html/", "/Users/xiejm/Desktop/testmar/html.mar", 1);
+    unarchive("/Users/xiejm/Desktop/testmar/html.mar", "/Users/xiejm/Desktop/testmar/outhtml");
     return 0;
 }
 
@@ -245,16 +244,12 @@ void unarchive (const char *ar_file_path, const char *output_dir) {
     printf("unarchiving: '%s' to '%s'\n", ar_file_path, output_dir);
 #endif
 
-    /* ensures the output_dir exists */
-    mkdirs(output_dir);
+    /*we will modify the output_dir, so we have to make a copy*/
+    const char *output_dir_cpy = (char *) malloc(strlen(output_dir) + 1);
+    strcpy(output_dir_cpy, output_dir);
 
-    /*struct stat stat_buf;*/
-    /*if (get_file_stat(output_dir, &stat_buf) != 0 */
-            /*|| !is_dir(&stat_buf)) {*/
-        /*fprintf(stderr, "%s is not a directory", output_dir);*/
-        /*return;*/
-    /*}*/
-
+    /* ensures the output_dir_cpy exists */
+    mkdirs(output_dir_cpy);
 
     uint8_t byte1, byte2;
     fread(&byte1, 1, 1, ar_file);
@@ -273,26 +268,23 @@ void unarchive (const char *ar_file_path, const char *output_dir) {
     printf("unarchiving: %s, version=%d\n", ar_file_path, version);
 #endif
 
-    unarchive_internal(ar_file, output_dir);
+    unarchive_internal(ar_file, output_dir_cpy);
 
     fclose(ar_file);
+    free(output_dir_cpy);
 }
 
 void unarchive_internal (FILE *ar_file, const char *output_dir) {
     size_t dir_len = strlen(output_dir);
     while (1) {
         int16_t path_len = read_int16(ar_file);         
-
-#if defined(DEBUG)
-    printf("unarchive_internal: len=%d\n", path_len);
-#endif
         if (path_len == 0)
             break;  /* reach the end of the archive */
 
         if ((path_len & DIR_MARK_BIT) > 0) {
             unarchive_dir(ar_file, output_dir, dir_len, (path_len & MAX_FILE_PATH_LEN));        
         } else {
-            unarchive_file(ar_file, output_dir, dir_len, MAX_FILE_PATH_LEN);        
+            unarchive_file(ar_file, output_dir, dir_len, path_len);        
         }
     }
 }
@@ -301,7 +293,7 @@ void unarchive_dir (FILE *ar_file, const char *output_dir, size_t dir_len, int16
     const char *new_path = read_unarchived_path(ar_file, output_dir, dir_len, path_len);
 
 #if defined(DEBUG)
-    printf("unarchiving dir: %s\n", new_path);
+    printf("unarchiving DIR: (%d), %s\n", path_len, new_path);
 #endif
 
     if (mkdir(output_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
@@ -315,9 +307,6 @@ void unarchive_dir (FILE *ar_file, const char *output_dir, size_t dir_len, int16
 void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int16_t path_len) {
     const char *new_path = read_unarchived_path(ar_file, output_dir, dir_len, path_len);
 
-#if defined(DEBUG)
-    printf("unarchiving file: %s\n", new_path);
-#endif
 
     char *last_slash = strrchr(new_path, '/');
     if (last_slash && last_slash != new_path) {
@@ -328,12 +317,18 @@ void unarchive_file (FILE *ar_file, const char *output_dir, size_t dir_len, int1
 
     int32_t file_len = read_int32(ar_file);
 
+#if defined(DEBUG)
+    printf("unarchiving FILE: (%d), %s\n", file_len, new_path);
+#endif
 
     FILE *out_file = fopen(new_path, "wb");
     if (out_file) {
-        size_t len_read;
-        while (!feof(ar_file)) {
-            len_read = fread(buffer, 1, BYTE_BUF_SIZE, ar_file);
+        size_t len_read = 0, total_read = 0, rest;
+        while (total_read < file_len) {
+            rest = file_len - total_read;
+
+            len_read = fread(buffer, 1, rest < BYTE_BUF_SIZE ? rest : BYTE_BUF_SIZE, ar_file);
+            total_read += len_read;
             fwrite(buffer, 1, len_read, out_file);
         }
         fclose(out_file);
@@ -358,7 +353,6 @@ const char *read_unarchived_path (FILE *ar_file, const char *output_dir, size_t 
         len_read += fread(path_pointer, 1, path_len - len_read, ar_file); 
     }
 
-    printf("new path: %s\n", new_path);
     return new_path;
 }
 
