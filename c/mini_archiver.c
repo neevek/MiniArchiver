@@ -12,7 +12,7 @@
 #define MAX_FILE_PATH_LEN (0xffff >> 1)
 #define DIR_MARK_BIT (1 << 15)
 #define VERSION 1
-#define BUFFER_SIZE (1024 * 32)
+#define BUFFER_SIZE (1024 * 532)
 #define SMALL_BUFFER_SIZE (1024 * 4)
 
 #define DEBUG
@@ -47,10 +47,11 @@ static int32_t read_int32 ();
 static void write_int16_le (int16_t n);
 static void write_int32_le (int32_t n);
 
+static void inc_buf_idx (int32_t n);
 
 static char buffer[BUFFER_SIZE];
 static char small_buffer[SMALL_BUFFER_SIZE];
-static uint16_t buf_idx = 0;
+static uint32_t buf_idx = 0;
 static FILE *ar_file;
 
 void archive (const char *root_path, const char *ar_file_path, int compress) {
@@ -119,7 +120,7 @@ void archive_dir (const char *dir_path, int path_start_idx, int compress) {
         write_path_name(dir_path + path_start_idx, 1); 
 
 #if defined(DEBUG)
-    printf("archiving dir: %s\n", dir_path + path_start_idx);
+    /*printf("archiving dir: %s\n", dir_path + path_start_idx);*/
 #endif
 
         size_t dir_len = strlen(dir_path);
@@ -150,39 +151,69 @@ void archive_file(const char *file_path, int path_start_idx, int compress) {
 
     struct stat stat_buf;    
     if (get_file_stat(file_path, &stat_buf)) {
+#if defined(DEBUG)
+        /*printf("archiving file: (%lld) %s\n", stat_buf.st_size, file_path);*/
+#endif
         write_int32(stat_buf.st_size);
         write_file(file_path);
-
-#if defined(DEBUG)
-        printf("archiving file: (%lld) %s\n", stat_buf.st_size, file_path);
-#endif
     }
 }
 
-void flush () {
-    size_t len_written = 0;
-    while (buf_idx > 0) {
-        len_written += fwrite(buffer + len_written, 1, buf_idx, ar_file);
-        buf_idx -= len_written;
+void write_path_name (const char *path_name, int is_dir) {
+    size_t len = strlen(path_name);
+    printf("path_name: %d - %s\n", len, path_name);
+    if (is_dir)
+        write_int16(len | DIR_MARK_BIT);
+    else
+        write_int16(len);
+
+    write_bytes(path_name, len);
+    /*fwrite(path_name, 1, len, ar_file);*/
+}
+
+void write_file (const char *if_name) {
+    FILE *infile = fopen(if_name, "rb");
+    size_t len_read;
+    while (!feof(infile)) {
+        while((len_read = fread(small_buffer, 1, SMALL_BUFFER_SIZE, infile)) > 0) {
+            write_bytes(small_buffer, len_read);
+        }
     }
+    fclose(infile);
 }
 
 void write_bytes (char *data, size_t len) {
     if (buf_idx + len <= BUFFER_SIZE) {
         memcpy(buffer + buf_idx, data, len); 
-        buf_idx += len;
+        inc_buf_idx(len);
+
+        printf("====================index: %d / %d\n", len, buf_idx);
     } else {
         while (len > 0) {
             size_t tmp_len = BUFFER_SIZE - buf_idx;
             if (tmp_len > len)
                 tmp_len = len;
             memcpy(buffer + buf_idx, data, tmp_len); 
-            buf_idx + tmp_len;
+            inc_buf_idx(tmp_len);
             len -= tmp_len;
 
             flush();
         }
     }
+}
+
+void flush () {
+    /*printf("flush called: %d\n", buf_idx);*/
+    size_t len_written = 0;
+    while (buf_idx > 0) {
+        len_written += fwrite(buffer + len_written, 1, buf_idx, ar_file);
+        inc_buf_idx(-len_written);
+    }
+}
+
+void inc_buf_idx (int32_t n) {
+    /*printf("inc_buf_idx: %d/%d\n", n, buf_idx);*/
+    buf_idx += n;
 }
 
 void write_int8 (int8_t n) {
@@ -207,7 +238,7 @@ void write_int16_le (int16_t n) {
     }
     buffer[buf_idx] = n & 0xff;
     buffer[buf_idx + 1] = (n >> 8) & 0xff;
-    buf_idx += 2;
+    inc_buf_idx(2);
 }
 
 void write_int32_le (int32_t n) {
@@ -218,7 +249,7 @@ void write_int32_le (int32_t n) {
     buffer[buf_idx + 1] = (n >> 8) & 0xff;
     buffer[buf_idx + 2] = (n >> 16) & 0xff;
     buffer[buf_idx + 3] = (n >> 24) & 0xff;
-    buf_idx += 4;
+    inc_buf_idx(4);
 }
 
 int16_t read_int16 () {
@@ -233,28 +264,6 @@ int32_t read_int32 () {
     if (fread(&n, 4, 1, ar_file) <= 0)
         return 0;
     return n;
-}
-
-void write_path_name (const char *path_name, int is_dir) {
-    size_t len = strlen(path_name);
-    if (is_dir)
-        write_int16(len | DIR_MARK_BIT);
-    else
-        write_int16(len);
-
-    write_bytes(path_name, len);
-    /*fwrite(path_name, 1, len, ar_file);*/
-}
-
-void write_file (const char *if_name) {
-    FILE *infile = fopen(if_name, "rb");
-    size_t len_read;
-    while (!feof(infile)) {
-        len_read = fread(small_buffer, 1, SMALL_BUFFER_SIZE, infile);
-        write_bytes(small_buffer, len_read);
-        /*fwrite(buffer, 1, len_read, ar_file);*/
-    }
-    fclose(infile);
 }
 
 int get_file_stat(const char *if_name, struct stat *stat_buf) {
@@ -363,6 +372,8 @@ void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
 
     char *last_slash = strrchr(new_path, '/');
     if (last_slash && last_slash != new_path) {
+        // if new_path is not a file located at the root dir "/"
+        // make sure the parent dirs of the current file(new_path) is created.
         *last_slash = '\0';
         mkdirs(new_path);
         *last_slash = '/';
@@ -382,8 +393,7 @@ void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
 
             len_read = fread(small_buffer, 1, rest < SMALL_BUFFER_SIZE ? rest : SMALL_BUFFER_SIZE, ar_file);
             total_read += len_read;
-            /*fwrite(buffer, 1, len_read, out_file);*/
-            write_bytes(small_buffer, len_read);
+            fwrite(small_buffer, 1, len_read, out_file);
         }
         fclose(out_file);
     } else {
@@ -445,6 +455,14 @@ int main(int argc, const char *argv[]) {
     /*archive("/Users/xiejm/Desktop/testmar/html/", "/Users/xiejm/Desktop/testmar/html.mar", 1);*/
     /*unarchive("/Users/xiejm/Desktop/testmar/html.mar", "/Users/xiejm/Desktop/testmar/outhtml");*/
     archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);
-    /*unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");*/
+    /*unarchive("/Users/neevek/Desktop/testmini/html2.mar", "/Users/neevek/Desktop/testmini/outhtml");*/
+
+    /*ar_file = fopen("testout", "wb");*/
+    /*write_int32(0xfffcfbfa);*/
+    /*write_int32_le(0xfffcfbfa);*/
+    /*char *s = "helloworld";*/
+    /*write_bytes(s, 10);*/
+    /*flush();*/
+    /*fclose(ar_file);*/
     return 0;
 }
