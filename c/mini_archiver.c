@@ -25,7 +25,6 @@ static void archive_file(const char *file_path, int path_start_idx, int compress
 static const char *make_path_name(const char *dir, size_t dir_len, const char *path_name, size_t path_name_len);
 static void write_path_name (const char *path_name, int is_dir);
 static void write_file (const char *if_name);
-static void flush ();
 
 static void unarchive (const char *ar_file_path, const char *output_dir);
 static void unarchive_internal (const char *output_dir);
@@ -38,7 +37,10 @@ static int get_file_stat(const char *if_name, struct stat *stat_buf);
 static int is_file(struct stat *stat_buf);
 static int is_dir(struct stat *stat_buf);
 
+static size_t read_bytes (const char *buf, size_t len);
+static size_t readin ();
 static void write_bytes (const char *data, size_t len);
+static void flush ();
 static int read_int16_le (int16_t *n);
 static int read_int32_le (int32_t *n);
 
@@ -51,6 +53,7 @@ static void inc_buf_idx (int32_t n);
 static char buffer[BUFFER_SIZE];
 static char small_buffer[SMALL_BUFFER_SIZE];
 static uint32_t buf_idx = 0;
+static uint32_t cur_buf_size = 0;
 static FILE *ar_file;
 
 void archive (const char *root_path, const char *ar_file_path, int compress) {
@@ -209,6 +212,47 @@ void flush () {
     }
 }
 
+size_t read_bytes (const char *buf, size_t len) {
+    if (buf_idx + len <= cur_buf_size) {
+        memcpy(buf, buffer + buf_idx, len);
+        inc_buf_idx(len);
+        return len;
+    } else {
+        size_t start_idx = 0;
+        while (1) {
+            size_t tmp_len = cur_buf_size - buf_idx;
+            if (tmp_len > len)
+                tmp_len = len;
+            memcpy(buf + start_idx, buffer + buf_idx, tmp_len); 
+            inc_buf_idx(tmp_len);
+            len -= tmp_len;
+            start_idx += tmp_len;
+
+            if (len == 0)
+                break;
+
+            size_t len_read = readin();
+            if (len_read <= 0 && buf_idx >= cur_buf_size) {
+                return len_read;
+            }
+        }
+        return start_idx;
+    }
+}
+
+size_t readin () {
+    buf_idx = 0;
+    cur_buf_size = 0;
+
+    size_t len_read, total_read = 0;
+    while (cur_buf_size < BUFFER_SIZE && (len_read = fread(buffer + total_read, 1, BUFFER_SIZE - total_read, ar_file)) > 0) {
+        total_read += len_read;
+        cur_buf_size += len_read;
+    }
+
+    return total_read;
+}
+
 void inc_buf_idx (int32_t n) {
     /*printf("inc_buf_idx: %d/%d\n", n, buf_idx);*/
     buf_idx += n;
@@ -219,6 +263,7 @@ void write_int16_le (int16_t n) {
         flush();        
     }
 
+    /*always write little endian*/
     buffer[buf_idx] = n & 0xff;
     buffer[buf_idx + 1] = (n >> 8) & 0xff;
     inc_buf_idx(2);
@@ -229,6 +274,7 @@ void write_int32_le (int32_t n) {
         flush();        
     }
 
+    /*always write little endian*/
     buffer[buf_idx] = n & 0xff;
     buffer[buf_idx + 1] = (n >> 8) & 0xff;
     buffer[buf_idx + 2] = (n >> 16) & 0xff;
@@ -238,13 +284,14 @@ void write_int32_le (int32_t n) {
 
 int read_int16_le (int16_t *n) {
     if (is_little_endian()) {
-        return fread(n, 2, 1, ar_file);
+        return read_bytes(n, sizeof(int16_t));
     } else {
         int16_t tmp;
-        size_t len_read = fread(&tmp, 2, 1, ar_file);
+        size_t len_read = read_bytes(&tmp, sizeof(int16_t));
         if (len_read <= 0)
             return len_read;
 
+        /*swap the byte order if it is big endian*/
         *n = ((tmp << 8) & 0xff00);
         *n |= (tmp >> 8) & 0xff;
 
@@ -254,13 +301,14 @@ int read_int16_le (int16_t *n) {
 
 int read_int32_le (int32_t *n) {
     if (is_little_endian()) {
-        return fread(n, 4, 1, ar_file);
+        return read_bytes(n, sizeof(int32_t));
     } else {
         int32_t tmp;
-        size_t len_read = fread(&tmp, 4, 1, ar_file);
+        size_t len_read = read_bytes(&tmp, sizeof(int32_t));
         if (len_read <= 0)
             return len_read;
 
+        /*swap the byte order if it is big endian*/
         *n = ((tmp << 24) & 0xff000000);
         *n |= ((tmp << 8) & 0xff0000);
         *n |= ((tmp >> 8) & 0xff00);
@@ -303,6 +351,7 @@ void unarchive (const char *ar_file_path, const char *output_dir) {
     ar_file = fopen(ar_file_path, "rb");
     if (!ar_file) {
         perror("unarchive"); 
+        fprintf(stderr, "failed to open file '%s' for read: %s\n", ar_file_path, strerror(errno));
         return;
     }
 
@@ -398,7 +447,8 @@ void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
         while (total_read < file_len) {
             rest = file_len - total_read;
 
-            len_read = fread(small_buffer, 1, rest < SMALL_BUFFER_SIZE ? rest : SMALL_BUFFER_SIZE, ar_file);
+            /*len_read = fread(small_buffer, 1, rest < SMALL_BUFFER_SIZE ? rest : SMALL_BUFFER_SIZE, ar_file);*/
+            len_read = read_bytes(small_buffer, rest < SMALL_BUFFER_SIZE ? rest : SMALL_BUFFER_SIZE);
             total_read += len_read;
             fwrite(small_buffer, 1, len_read, out_file);
         }
@@ -422,7 +472,8 @@ const char *read_unarchived_path (const char *output_dir, size_t dir_len, int16_
     size_t len_read = 0;
     while (len_read < path_len) {
         char *path_pointer = new_path + dir_len + 1 + len_read;
-        len_read += fread(path_pointer, 1, path_len - len_read, ar_file); 
+        /*len_read += fread(path_pointer, 1, path_len - len_read, ar_file); */
+        len_read += read_bytes(path_pointer, path_len - len_read); 
     }
 
     return new_path;
@@ -469,10 +520,10 @@ int is_little_endian() {
 
 
 int main(int argc, const char *argv[]) {
-    archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);
-    unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");
-    /*archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);*/
-    /*unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");*/
+    /*archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);*/
+    /*unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");*/
+    archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);
+    unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");
 
     return 0;
 }
