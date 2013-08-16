@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #define MAX_FILE_PATH_LEN (0xffff >> 1)
 #define DIR_MARK_BIT (1 << 15)
@@ -214,22 +215,20 @@ void inc_buf_idx (int32_t n) {
 }
 
 void write_int16_le (int16_t n) {
-    /*fwrite(&n, 2, 1, ar_file);*/
-
     if (buf_idx + 2 > BUFFER_SIZE) {
         flush();        
     }
+
     buffer[buf_idx] = n & 0xff;
     buffer[buf_idx + 1] = (n >> 8) & 0xff;
     inc_buf_idx(2);
 }
 
 void write_int32_le (int32_t n) {
-    /*fwrite(&n, 4, 1, ar_file);*/
-
     if (buf_idx + 4 > BUFFER_SIZE) {
         flush();        
     }
+
     buffer[buf_idx] = n & 0xff;
     buffer[buf_idx + 1] = (n >> 8) & 0xff;
     buffer[buf_idx + 2] = (n >> 16) & 0xff;
@@ -257,7 +256,7 @@ int read_int32_le (int32_t *n) {
     if (is_little_endian()) {
         return fread(n, 4, 1, ar_file);
     } else {
-        uint32_t tmp;
+        int32_t tmp;
         size_t len_read = fread(&tmp, 4, 1, ar_file);
         if (len_read <= 0)
             return len_read;
@@ -405,7 +404,8 @@ void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
         }
         fclose(out_file);
     } else {
-        fprintf(stderr, "Failed to open '%s' for write.\n", new_path);
+        fprintf(stderr, "failed to open '%s' for write: %s\n", new_path, strerror(errno));
+        exit(1);
     }
 
     free((char *)new_path);
@@ -441,7 +441,7 @@ void mkdirs (const char *dir) {
         }   
         *ch = '\0';
         if (mkdir(dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
-            fprintf(stderr, "create dir '%s' failed: %s\n", dir, strerror(errno));
+            fprintf(stderr, "failed to create dir '%s': %s\n", dir, strerror(errno));
 
             *ch = '/';
             exit(1);
@@ -453,14 +453,12 @@ void mkdirs (const char *dir) {
     }   
 
     if (*last_ch != '\0' && mkdir(dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
-        fprintf(stderr, "create dir '%s' failed: %s\n", dir, strerror(errno));
+        fprintf(stderr, "failed to create dir '%s': %s\n", dir, strerror(errno));
         exit(1);
     }   
 }
 
 int is_little_endian() {
-    if (1) return 0;
-
     union {
         uint32_t i;
         char c[4];
@@ -471,8 +469,8 @@ int is_little_endian() {
 
 
 int main(int argc, const char *argv[]) {
-    /*archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);*/
-    /*unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");*/
+    archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);
+    unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");
     /*archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);*/
     /*unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");*/
 
