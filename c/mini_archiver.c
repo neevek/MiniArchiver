@@ -43,6 +43,7 @@ static int read_int32_le (int32_t *n);
 
 static void write_int16_le (int16_t n);
 static void write_int32_le (int32_t n);
+static int is_little_endian();
 
 static void inc_buf_idx (int32_t n);
 
@@ -226,7 +227,6 @@ void write_int16_le (int16_t n) {
 void write_int32_le (int32_t n) {
     /*fwrite(&n, 4, 1, ar_file);*/
 
-        flush();        
     if (buf_idx + 4 > BUFFER_SIZE) {
         flush();        
     }
@@ -238,11 +238,37 @@ void write_int32_le (int32_t n) {
 }
 
 int read_int16_le (int16_t *n) {
-    return fread(n, 2, 1, ar_file);
+    if (is_little_endian()) {
+        return fread(n, 2, 1, ar_file);
+    } else {
+        int16_t tmp;
+        size_t len_read = fread(&tmp, 2, 1, ar_file);
+        if (len_read <= 0)
+            return len_read;
+
+        *n = ((tmp << 8) & 0xff00);
+        *n |= (tmp >> 8) & 0xff;
+
+        return len_read;
+    }
 }
 
 int read_int32_le (int32_t *n) {
-    return fread(n, 4, 1, ar_file);
+    if (is_little_endian()) {
+        return fread(n, 4, 1, ar_file);
+    } else {
+        uint32_t tmp;
+        size_t len_read = fread(&tmp, 4, 1, ar_file);
+        if (len_read <= 0)
+            return len_read;
+
+        *n = ((tmp << 24) & 0xff000000);
+        *n |= ((tmp << 8) & 0xff0000);
+        *n |= ((tmp >> 8) & 0xff00);
+        *n |= ((tmp >> 24) & 0xff);
+
+        return len_read;
+    }
 }
 
 int get_file_stat(const char *if_name, struct stat *stat_buf) {
@@ -432,11 +458,23 @@ void mkdirs (const char *dir) {
     }   
 }
 
+int is_little_endian() {
+    if (1) return 0;
+
+    union {
+        uint32_t i;
+        char c[4];
+    } uint32_uni = {0x01020304};
+
+    return uint32_uni.c[0] == 4; 
+}
+
 
 int main(int argc, const char *argv[]) {
-    archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);
-    unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");
+    /*archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);*/
+    /*unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");*/
     /*archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);*/
     /*unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");*/
+
     return 0;
 }
