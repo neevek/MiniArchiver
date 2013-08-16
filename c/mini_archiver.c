@@ -409,7 +409,7 @@ void mkdirs (const char *dir) {
         ++ch;
     }   
 
-    while (ch = strchr(ch, '/')) {
+    while ((ch = strchr(ch, '/'))) {
         while (*(ch + 1) == '/') {
             ++ch;
         }   
@@ -434,9 +434,9 @@ void mkdirs (const char *dir) {
 
 
 int main(int argc, const char *argv[]) {
-    /*archive("/Users/xiejm/Desktop/testmar/html/", "/Users/xiejm/Desktop/testmar/html.mar", 1);*/
-    /*unarchive("/Users/xiejm/Desktop/testmar/html.mar", "/Users/xiejm/Desktop/testmar/outhtml");*/
-    archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);
-    unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");
+    archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);
+    unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");
+    /*archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);*/
+    /*unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");*/
     return 0;
 }
