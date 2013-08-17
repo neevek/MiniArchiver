@@ -54,17 +54,17 @@ static char buffer[BUFFER_SIZE];
 static char small_buffer[SMALL_BUFFER_SIZE];
 static uint32_t buf_idx = 0;
 static uint32_t cur_buf_size = 0;
-static FILE *ar_file;
+static gzFile ar_file;
 
 void archive (const char *root_path, const char *ar_file_path, int compress) {
-    ar_file = fopen(ar_file_path, "wb");
+    ar_file = gzopen(ar_file_path, "wb");
     if (ar_file) {
         write_int16_le(VERSION);
 
         archive_internal(root_path, 1);
         flush();
         
-        fclose(ar_file);
+        gzclose(ar_file);
     } else {
         fprintf(stderr, "failed to open file '%s': %s\n", ar_file_path, strerror(errno));
     }
@@ -207,7 +207,7 @@ void flush () {
     /*printf("flush called: %d\n", buf_idx);*/
     size_t len_written = 0;
     while (buf_idx > 0) {
-        len_written += fwrite(buffer + len_written, 1, buf_idx, ar_file);
+        len_written += gzwrite(ar_file, buffer + len_written, buf_idx);
         inc_buf_idx(-len_written);
     }
 }
@@ -245,7 +245,7 @@ size_t readin () {
     cur_buf_size = 0;
 
     size_t len_read, total_read = 0;
-    while (cur_buf_size < BUFFER_SIZE && (len_read = fread(buffer + total_read, 1, BUFFER_SIZE - total_read, ar_file)) > 0) {
+    while (cur_buf_size < BUFFER_SIZE && (len_read = gzread(ar_file, buffer + total_read, BUFFER_SIZE - total_read)) > 0) {
         total_read += len_read;
         cur_buf_size += len_read;
     }
@@ -348,7 +348,7 @@ const char *make_path_name(const char *dir, size_t dir_len, const char *path_nam
 /* unarchive related code */
 
 void unarchive (const char *ar_file_path, const char *output_dir) {
-    ar_file = fopen(ar_file_path, "rb");
+    ar_file = gzopen(ar_file_path, "rb");
     if (!ar_file) {
         perror("unarchive"); 
         fprintf(stderr, "failed to open file '%s' for read: %s\n", ar_file_path, strerror(errno));
@@ -366,16 +366,6 @@ void unarchive (const char *ar_file_path, const char *output_dir) {
     /* ensures the output_dir_cpy exists */
     mkdirs(output_dir_cpy);
 
-    uint8_t byte1, byte2;
-    fread(&byte1, 1, 1, ar_file);
-    fread(&byte2, 1, 1, ar_file);
-
-    fseek(ar_file, 0, SEEK_SET);
-    
-    if (byte1 == 0x1f && (byte2 & 0xff) == 0x8b) {
-        /* handle gzip */
-    }
-
     /*ignore the version number*/
     int16_t version; 
     read_int16_le(&version);
@@ -386,7 +376,7 @@ void unarchive (const char *ar_file_path, const char *output_dir) {
 
     unarchive_internal(output_dir_cpy);
 
-    fclose(ar_file);
+    gzclose(ar_file);
     free(output_dir_cpy);
 
 }
