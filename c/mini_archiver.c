@@ -17,7 +17,6 @@
 
 #define DEBUG
 
-static void archive (const char *root_path, const char *ar_file_path, int compress);
 static void archive_internal (const char *root_path);
 static void archive_dir (const char *dir_path, int path_start_idx);
 static void archive_file(const char *file_path, int path_start_idx);
@@ -25,11 +24,10 @@ static const char *make_path_name(const char *dir, size_t dir_len, const char *p
 static void write_path_name (const char *path_name, int is_dir);
 static void write_file (const char *if_name);
 
-static void unarchive (const char *ar_file_path, const char *output_dir);
-static void unarchive_internal (const char *output_dir);
-static void unarchive_dir (const char *output_dir, size_t dir_len, int16_t path_len);
-static void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len);
-static const char *read_unarchived_path (const char *output_dir, size_t dir_len, int16_t path_len);
+static void unarchive_internal ();
+static void unarchive_dir (int16_t path_len);
+static void unarchive_file (int16_t path_len);
+static const char *read_unarchived_path (int16_t path_len);
 static void mkdirs (const char *dir);
 
 static int get_file_stat(const char *if_name, struct stat *stat_buf);
@@ -47,25 +45,12 @@ static int is_little_endian();
 
 static char buffer[BUFFER_SIZE];
 static gzFile ar_file;
-
-void archive (const char *root_path, const char *ar_file_path, int compress) {
-    ar_file = gzopen(ar_file_path, "wb9");
-    if (ar_file) {
-        gzbuffer(ar_file, GZ_BUFFER_SIZE);
-        write_int16_le(VERSION);
-
-        archive_internal(root_path);
-        
-        gzclose(ar_file);
-    } else {
-        fprintf(stderr, "failed to open file '%s': %s\n", ar_file_path, strerror(errno));
-    }
-}
+static int use_compress = 0;
 
 void archive_internal (const char *root_path) {
     if (strstr(root_path, "..")) {
         fprintf(stderr, "Error: Path '%s' contains '..'\n", root_path);
-        return;
+        exit(1);
     }
 
     int path_start_idx = 0;
@@ -77,7 +62,7 @@ void archive_internal (const char *root_path) {
 
         if (*(root_path + path_start_idx) == '\0') {
             fprintf(stderr, "Fatal: Archiving the root directory is not allowed: %s\n", root_path);
-            return; 
+            exit(1);
         }
     }
 
@@ -102,6 +87,7 @@ void archive_internal (const char *root_path) {
         }
     } else {
         perror(NULL);
+        exit(1);
     }
 
     free(ar_root_path);
@@ -270,77 +256,34 @@ const char *make_path_name(const char *dir, size_t dir_len, const char *path_nam
     return new_path_name;
 }
 
-
-/* unarchive related code */
-void unarchive (const char *ar_file_path, const char *output_dir) {
-    ar_file = gzopen(ar_file_path, "rb");
-    if (!ar_file) {
-        gzbuffer(ar_file, GZ_BUFFER_SIZE);
-
-        perror("unarchive"); 
-        fprintf(stderr, "failed to open file '%s' for read: %s\n", ar_file_path, strerror(errno));
-        return;
-    }
-
-#if defined(DEBUG)
-    printf("unarchiving: '%s' to '%s'\n", ar_file_path, output_dir);
-#endif
-
-    /*we will modify the output_dir, so we have to make a copy*/
-    char *output_dir_cpy = (char *) malloc(strlen(output_dir) + 1);
-    strcpy(output_dir_cpy, output_dir);
-
-    /* ensures the output_dir_cpy exists */
-    mkdirs(output_dir_cpy);
-
-    /*ignore the version number*/
-    int16_t version; 
-    read_int16_le(&version);
-
-#if defined(DEBUG)
-    printf("unarchiving: %s, version=%d\n", ar_file_path, version);
-#endif
-
-    unarchive_internal(output_dir_cpy);
-
-    gzclose(ar_file);
-    free(output_dir_cpy);
-
-}
-
-void unarchive_internal (const char *output_dir) {
-    size_t dir_len = strlen(output_dir);
+void unarchive_internal () {
     while (1) {
         int16_t path_len;
         if (read_int16_le(&path_len) <= 0)
             break;  /* reach the end of the archive */
 
         if ((path_len & DIR_MARK_BIT) > 0) {
-            unarchive_dir(output_dir, dir_len, (path_len & MAX_FILE_PATH_LEN));        
+            unarchive_dir((path_len & MAX_FILE_PATH_LEN));        
         } else {
-            unarchive_file(output_dir, dir_len, path_len);        
+            unarchive_file(path_len);        
         }
     }
 }
 
-void unarchive_dir (const char *output_dir, size_t dir_len, int16_t path_len) {
-    const char *new_path = read_unarchived_path(output_dir, dir_len, path_len);
+void unarchive_dir (int16_t path_len) {
+    const char *new_path = read_unarchived_path(path_len);
 
 #if defined(DEBUG)
     printf("unarchiving dir: (%d), %s\n", path_len, new_path);
 #endif
 
-    if (mkdir(output_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
-        fprintf(stderr, "create dir '%s' failed: %s\n", output_dir, strerror(errno));
-        exit(1);
-    }   
+    mkdirs(new_path);
 
     free((char *)new_path);
 }
 
-void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
-    const char *new_path = read_unarchived_path(output_dir, dir_len, path_len);
-
+void unarchive_file (int16_t path_len) {
+    const char *new_path = read_unarchived_path(path_len);
 
     char *last_slash = strrchr(new_path, '/');
     if (last_slash && last_slash != new_path) {
@@ -377,25 +320,21 @@ void unarchive_file (const char *output_dir, size_t dir_len, int16_t path_len) {
     free((char *)new_path);
 }
 
-const char *read_unarchived_path (const char *output_dir, size_t dir_len, int16_t path_len) {
-    int len = dir_len + 1 + path_len + 1;
-    char *new_path = (char *) malloc(len);
-    new_path[0] = '\0';
-    strcat(new_path, output_dir);
-    strcat(new_path, "/");
-    new_path[len - 1] = '\0';
+const char *read_unarchived_path (int16_t path_len) {
+    char *new_path = (char *) malloc(path_len + 1);
+    new_path[path_len] = '\0';
 
     size_t len_read = 0;
     while (len_read < path_len) {
-        char *path_pointer = new_path + dir_len + 1 + len_read;
-        len_read += read_bytes(path_pointer, path_len - len_read);
+        len_read += read_bytes(new_path + len_read, path_len - len_read);
     }
 
     return new_path;
 }
 
 void mkdirs (const char *dir) {
-    char *ch = (char *)dir, *last_ch;
+    char *ch = (char *)dir;
+    char *last_ch = ch;
 
     while (*ch == '/') {
         ++ch;
@@ -404,7 +343,7 @@ void mkdirs (const char *dir) {
     while ((ch = strchr(ch, '/'))) {
         while (*(ch + 1) == '/') {
             ++ch;
-        }   
+        }
         *ch = '\0';
         if (mkdir(dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
             fprintf(stderr, "failed to create dir '%s': %s\n", dir, strerror(errno));
@@ -434,11 +373,123 @@ int is_little_endian() {
 }
 
 
-int main(int argc, const char *argv[]) {
-    /*archive("/Users/xiejm/Desktop/testmini/html/", "/Users/xiejm/Desktop/testmini/html.mar", 1);*/
-    /*unarchive("/Users/xiejm/Desktop/testmini/html.mar", "/Users/xiejm/Desktop/testmini/outhtml");*/
-    archive("/Users/neevek/Desktop/testmini/html/", "/Users/neevek/Desktop/testmini/html.mar", 1);
-    unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/outhtml");
+int main(int argc, char *argv[]) {
+    int archive = 0;
+    int unarchive = 0;
+    char compress_level = '9';
+    char *file_path = NULL;
+    char *output_dir = NULL;
+    int c, error = 0, digits = 0;
+    while ((c = getopt(argc, argv, "zcxf:C:0123456789")) != -1) {
+        switch (c) {
+            case 'f':
+                file_path = optarg;
+                break;
+            case 'c':
+                archive = 1;
+                break;
+            case 'x':
+                unarchive = 1;
+                break;
+            case 'z':
+                use_compress = 1;
+                break;
+            case 'C':
+                output_dir = optarg;
+                break;
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
+            case '8':
+            case '9':
+                compress_level = c;
+                ++digits;
+                break;
+            case '?':
+                ++error;
+                break;
+        }
+    }
+
+    if (error > 0) {
+        exit(1);
+    }
+
+    if (archive && unarchive) {
+        fprintf(stderr, "%s: can't specify both -c and -x\n", argv[0]);
+        exit(1); 
+    }
+
+    if (!archive && !unarchive) {
+        fprintf(stderr, "%s: must specify either -c or -x\n", argv[0]);
+        exit(1); 
+    }
+
+    if (archive && optind >= argc) {
+        fprintf(stderr, "%s: no files or directories specified\n", argv[0]);
+        exit(1); 
+    }
+
+    if (digits > 1) {
+        fprintf(stderr, "%s: can specify only one compression level\n", argv[0]);
+        exit(1); 
+    }
+
+    char *mode;
+    if (archive) {
+        if (use_compress) {
+            char tmp_mode[4] = "wb"; 
+            tmp_mode[2] = compress_level; 
+            tmp_mode[3] = '\0';
+            mode = tmp_mode;
+        } else {
+            mode = "wbT";
+        }
+
+    } else {
+        mode = "rb";
+        if (output_dir == NULL) {
+            output_dir = ".";
+        }
+    }
+
+    if (file_path) {
+        ar_file = gzopen(file_path, mode);
+    } else {
+        ar_file = gzdopen(archive ? 1 : 0, mode);
+    }
+
+    if (ar_file) {
+        gzbuffer(ar_file, GZ_BUFFER_SIZE);
+
+        if (archive) {
+            write_int16_le(VERSION);
+            while (optind < argc) {
+                archive_internal(argv[optind++]);
+            }
+        } else {
+            if (chdir(output_dir) != 0) {
+                fprintf(stderr, "failed to chdir to '%s': %s\n", output_dir, strerror(errno));
+                exit(1);
+            }
+
+            /*ignore the version number*/
+            int16_t version; 
+            read_int16_le(&version);
+
+            unarchive_internal();
+        }
+
+        gzclose(ar_file);
+    } else {
+        fprintf(stderr, "failed to open file '%s': %s\n", file_path ? file_path : "stdin", strerror(errno));
+        exit(1);
+    }
 
     return 0;
 }
