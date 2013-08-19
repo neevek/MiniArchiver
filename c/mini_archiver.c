@@ -108,14 +108,24 @@ void archive_dir (const char *dir_path, int path_start_idx) {
         while ((ent = readdir (dir)) != NULL) {
             if ((ent->d_type & DT_DIR) > 0) {
                 if (strcmp(ent->d_name, ".") != 0 && strcmp(ent->d_name, "..") != 0) {
-                    const char *new_path_name = make_path_name(dir_path, dir_len, ent->d_name, ent->d_namlen);
+#ifdef __APPLE__
+                    uint8_t namlen = ent->d_namlen;
+#else
+                    uint8_t namlen = strlen(ent->d_name);
+#endif
+                    const char *new_path_name = make_path_name(dir_path, dir_len, ent->d_name, namlen);
 
                     archive_dir(new_path_name, path_start_idx); 
 
                     free((char *)new_path_name);
                 }
             } else if ((ent->d_type & DT_REG) > 0) {
-                const char *new_path_name = make_path_name(dir_path, dir_len, ent->d_name, ent->d_namlen);
+#ifdef __APPLE__
+                uint8_t namlen = ent->d_namlen;
+#else
+                uint8_t namlen = strlen(ent->d_name);
+#endif
+                const char *new_path_name = make_path_name(dir_path, dir_len, ent->d_name, namlen);
 
                 archive_file(new_path_name, path_start_idx);
 
