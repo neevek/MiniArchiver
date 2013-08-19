@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-c -Wall
 LIBS=-lz
-BIN=mar
+BIN=ma
 INSTALL_DIR=/usr/local/bin
 UNAME_S := $(shell uname -s | cut -d- -f1)
 
@@ -13,14 +13,14 @@ endif
 
 all: ${BIN}
 
-mar: mar.o
-	${CC} mar.o ${LIBS} -o ${BIN}
+ma: ma.o
+	${CC} ma.o ${LIBS} -o ${BIN}
 
-mar.o: mini_archiver.c
-	${CC} ${CFLAGS} -o mar.o mini_archiver.c
+ma.o: mini_archiver.c
+	${CC} ${CFLAGS} -o ma.o mini_archiver.c
 
 install:
 	cp ${BIN} ${INSTALL_DIR}/${BIN}
 
 clean: 
-	rm -f *.o mar
+	rm -f *.o ma

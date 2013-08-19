@@ -51,6 +51,7 @@ static char buffer[BUFFER_SIZE];
 static gzFile ar_file;
 static int use_compress = 0;
 static int verbose = 0;
+static int ar_file_inode_no = 0;
 
 void archive_internal (const char *root_path) {
     if (strstr(root_path, "..")) {
@@ -142,11 +143,14 @@ void archive_dir (const char *dir_path, int path_start_idx) {
 }
 
 void archive_file(const char *file_path, int path_start_idx) {
-    write_path_name(file_path + path_start_idx, 0);
-
     struct stat stat_buf;    
     if (get_file_stat(file_path, &stat_buf)) {
+        if (stat_buf.st_ino == ar_file_inode_no) {
+            fprintf(stderr, "ma: %s: Can't add archive to itself\n", file_path);
+            return;
+        }
 
+        write_path_name(file_path + path_start_idx, 0);
         if (verbose)
             printf("archiving file: (%lld) %s\n", stat_buf.st_size, file_path);
 
@@ -506,6 +510,13 @@ int main(int argc, char *argv[]) {
         gzbuffer(ar_file, GZ_BUFFER_SIZE);
 
         if (archive) {
+            if (file_path) {
+                struct stat ar_file_stat;
+                if (get_file_stat(file_path, &ar_file_stat)) {
+                    ar_file_inode_no = ar_file_stat.st_ino;
+                }
+            }
+
             write_int16_le(ARCHIVE_VERSION);
             while (optind < argc) {
                 archive_internal(argv[optind++]);
