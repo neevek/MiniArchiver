@@ -46,6 +46,7 @@ static int is_little_endian();
 static char buffer[BUFFER_SIZE];
 static gzFile ar_file;
 static int use_compress = 0;
+static int verbose = 0;
 
 void archive_internal (const char *root_path) {
     if (strstr(root_path, "..")) {
@@ -55,7 +56,8 @@ void archive_internal (const char *root_path) {
 
     int path_start_idx = 0;
     if (*root_path == '/') {
-        fprintf(stderr, "Removing leading '/' for path: %s\n", root_path);
+        if (verbose)
+            printf("removing leading '/' for path: %s\n", root_path);
         while (*(root_path + path_start_idx) == '/') {
             ++path_start_idx;
         }
@@ -99,9 +101,8 @@ void archive_dir (const char *dir_path, int path_start_idx) {
     if ((dir = opendir (dir_path)) != NULL) {
         write_path_name(dir_path + path_start_idx, 1); 
 
-#if defined(DEBUG)
-        printf("archiving dir: %s\n", dir_path + path_start_idx);
-#endif
+        if (verbose)
+            printf("archiving dir: %s\n", dir_path + path_start_idx);
 
         size_t dir_len = strlen(dir_path);
 
@@ -141,9 +142,10 @@ void archive_file(const char *file_path, int path_start_idx) {
 
     struct stat stat_buf;    
     if (get_file_stat(file_path, &stat_buf)) {
-#if defined(DEBUG)
-        printf("archiving file: (%lld) %s\n", stat_buf.st_size, file_path);
-#endif
+
+        if (verbose)
+            printf("archiving file: (%lld) %s\n", stat_buf.st_size, file_path);
+
         write_int32_le(stat_buf.st_size);
         write_file(file_path);
     }
@@ -283,9 +285,8 @@ void unarchive_internal () {
 void unarchive_dir (int16_t path_len) {
     const char *new_path = read_unarchived_path(path_len);
 
-#if defined(DEBUG)
-    printf("unarchiving dir: (%d), %s\n", path_len, new_path);
-#endif
+    if (verbose)
+        printf("unarchiving dir: (%d), %s\n", path_len, new_path);
 
     mkdirs(new_path);
 
@@ -307,9 +308,8 @@ void unarchive_file (int16_t path_len) {
     int32_t file_len;
     read_int32_le(&file_len);
 
-#if defined(DEBUG)
-    printf("unarchiving file: (%d), %s\n", file_len, new_path);
-#endif
+    if (verbose)
+        printf("unarchiving file: (%d), %s\n", file_len, new_path);
 
     FILE *out_file = fopen(new_path, "wb");
     if (out_file) {
@@ -390,7 +390,7 @@ int main(int argc, char *argv[]) {
     char *file_path = NULL;
     char *output_dir = NULL;
     int c, error = 0, digits = 0;
-    while ((c = getopt(argc, argv, "zcxf:C:0123456789")) != -1) {
+    while ((c = getopt(argc, argv, "zcxvf:C:0123456789")) != -1) {
         switch (c) {
             case 'f':
                 file_path = optarg;
@@ -406,6 +406,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'C':
                 output_dir = optarg;
+                break;
+            case 'v':
+                verbose = 1;
                 break;
             case '0':
             case '1':
