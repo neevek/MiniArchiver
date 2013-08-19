@@ -9,13 +9,15 @@
 #include <dirent.h>
 #include <stdlib.h>
 
+#define VERSION "v0.0.1"
+
 #define MAX_FILE_PATH_LEN (0xffff >> 1)
 #define DIR_MARK_BIT (1 << 15)
-#define VERSION 1
+#define ARCHIVE_VERSION 1
 #define BUFFER_SIZE (1024 * 32)
 #define GZ_BUFFER_SIZE (1024 * 128)
 
-#define DEBUG
+#define DEBUG 0
 
 static void archive_internal (const char *root_path);
 static void archive_dir (const char *dir_path, int path_start_idx);
@@ -42,6 +44,8 @@ static int read_int32_le (int32_t *n);
 static void write_int16_le (int16_t n);
 static void write_int32_le (int32_t n);
 static int is_little_endian();
+
+static void print_help ();
 
 static char buffer[BUFFER_SIZE];
 static gzFile ar_file;
@@ -382,6 +386,23 @@ int is_little_endian() {
     return uint32_uni.c[0] == 4; 
 }
 
+void print_help () {
+    printf("usage: mar [options] ...\n\n");
+    printf("optins:\n");
+    printf("    -c: archive\n");
+    printf("    -x: unarchive\n");
+    printf("    -z: use gzip compression when archiving\n");
+    printf("    -f: archive file(for archiving or unarchiving)\n");
+    printf("    -C: output directory for unarchiving\n");
+    printf("    -0: no compression but keep gzip header, this option is applied only when -z is specified.\n");
+    printf("    -1 to -9: compress faster to compress better, this option is applied only when -z is specified.\n");
+    printf("    -v: verbose\n\n");
+    printf("examples:\n");
+    printf("    mar -czf foo.mar.gz dir1 dir2 file1 file2\n");
+    printf("    mar -xf foo.mar.gz -C outdir\n");
+    printf("    mar -c dir1 dir2 | gzip -c > foo.mar.gz\n\n");
+    printf("version: %s, all right reserved @neevek\n\n", VERSION);
+}
 
 int main(int argc, char *argv[]) {
     int archive = 0;
@@ -435,21 +456,25 @@ int main(int argc, char *argv[]) {
 
     if (archive && unarchive) {
         fprintf(stderr, "%s: can't specify both -c and -x\n", argv[0]);
+        print_help();
         exit(1); 
     }
 
     if (!archive && !unarchive) {
         fprintf(stderr, "%s: must specify either -c or -x\n", argv[0]);
+        print_help();
         exit(1); 
     }
 
     if (archive && optind >= argc) {
         fprintf(stderr, "%s: no files or directories specified\n", argv[0]);
+        print_help();
         exit(1); 
     }
 
     if (digits > 1) {
         fprintf(stderr, "%s: can specify only one compression level\n", argv[0]);
+        print_help();
         exit(1); 
     }
 
@@ -481,7 +506,7 @@ int main(int argc, char *argv[]) {
         gzbuffer(ar_file, GZ_BUFFER_SIZE);
 
         if (archive) {
-            write_int16_le(VERSION);
+            write_int16_le(ARCHIVE_VERSION);
             while (optind < argc) {
                 archive_internal(argv[optind++]);
             }
