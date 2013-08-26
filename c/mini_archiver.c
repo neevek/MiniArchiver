@@ -41,9 +41,11 @@ static void write_bytes (const char *data, size_t len);
 static int read_int16_le (int16_t *n);
 static int read_int32_le (int32_t *n);
 
+static void exit_with_errormsg (const char *fmt, const char *msg);
+
 static void write_int16_le (int16_t n);
 static void write_int32_le (int32_t n);
-static int is_little_endian();
+static inline int is_little_endian();
 
 static void print_help ();
 
@@ -391,21 +393,27 @@ int is_little_endian() {
 }
 
 void print_help () {
-    printf("usage: mar [options] ...\n\n");
-    printf("optins:\n");
-    printf("    -c: archive\n");
-    printf("    -x: unarchive\n");
-    printf("    -z: use gzip compression when archiving\n");
-    printf("    -f: archive file(for archiving or unarchiving)\n");
-    printf("    -C: output directory for unarchiving\n");
-    printf("    -0: no compression but keep gzip header, this option is applied only when -z is specified.\n");
-    printf("    -1 to -9: compress faster to compress better, this option is applied only when -z is specified.\n");
-    printf("    -v: verbose\n\n");
-    printf("examples:\n");
-    printf("    mar -czf foo.mar.gz dir1 dir2 file1 file2\n");
-    printf("    mar -xf foo.mar.gz -C outdir\n");
-    printf("    mar -c dir1 dir2 | gzip -c > foo.mar.gz\n\n");
-    printf("version: %s, all right reserved @neevek\n\n", VERSION);
+    printf("usage: mar [options] ...\n\n"
+           "optins:\n"
+           "    -c: archive\n"
+           "    -x: unarchive\n"
+           "    -z: use gzip compression when archiving\n"
+           "    -f: archive file(for archiving or unarchiving)\n"
+           "    -C: output directory for unarchiving\n"
+           "    -0: no compression but keep gzip header, this option is applied only when -z is specified.\n"
+           "    -1 to -9: compress faster to compress better, this option is applied only when -z is specified.\n"
+           "    -v: verbose\n\n"
+           "examples:\n"
+           "    mar -czf foo.mar.gz dir1 dir2 file1 file2\n"
+           "    mar -xf foo.mar.gz -C outdir\n"
+           "    mar -c dir1 dir2 | gzip -c > foo.mar.gz\n\n"
+           "version: %s, all right reserved @neevek\n\n", VERSION);
+}
+
+void exit_with_errormsg (const char *fmt, const char *msg) {
+    fprintf(stderr, fmt, msg);
+    print_help();
+    exit(1); 
 }
 
 int main(int argc, char *argv[]) {
@@ -454,33 +462,20 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (error > 0) {
+    if (error > 0)
         exit(1);
-    }
 
-    if (archive && unarchive) {
-        fprintf(stderr, "%s: can't specify both -c and -x\n", argv[0]);
-        print_help();
-        exit(1); 
-    }
+    if (archive && unarchive)
+        exit_with_errormsg("%s: can't specify both -c and -x\n", argv[0]);
 
-    if (!archive && !unarchive) {
-        fprintf(stderr, "%s: must specify either -c or -x\n", argv[0]);
-        print_help();
-        exit(1); 
-    }
+    if (!archive && !unarchive)
+        exit_with_errormsg("%s: must specify either -c or -x\n", argv[0]);
 
-    if (archive && optind >= argc) {
-        fprintf(stderr, "%s: no files or directories specified\n", argv[0]);
-        print_help();
-        exit(1); 
-    }
+    if (archive && optind >= argc)
+        exit_with_errormsg("%s: no files or directories specified\n", argv[0]);
 
-    if (digits > 1) {
-        fprintf(stderr, "%s: can specify only one compression level\n", argv[0]);
-        print_help();
-        exit(1); 
-    }
+    if (digits > 1)
+        exit_with_errormsg("%s: can specify only one compression level\n", argv[0]);
 
     char *mode;
     if (archive) {
