@@ -393,7 +393,7 @@ int is_little_endian() {
 }
 
 void print_help () {
-    printf("usage: mar [options] ...\n\n"
+    printf("usage: ma [options] ...\n\n"
            "optins:\n"
            "    -c: archive\n"
            "    -x: unarchive\n"
@@ -404,9 +404,9 @@ void print_help () {
            "    -1 to -9: compress faster to compress better, this option is applied only when -z is specified.\n"
            "    -v: verbose\n\n"
            "examples:\n"
-           "    mar -czf foo.mar.gz dir1 dir2 file1 file2\n"
-           "    mar -xf foo.mar.gz -C outdir\n"
-           "    mar -c dir1 dir2 | gzip -c > foo.mar.gz\n\n"
+           "    ma -czf foo.ma.gz dir1 dir2 file1 file2\n"
+           "    ma -xf foo.ma.gz -C outdir\n"
+           "    ma -c dir1 dir2 | gzip -c > foo.ma.gz\n\n"
            "version: %s, all right reserved @neevek\n\n", VERSION);
 }
 
