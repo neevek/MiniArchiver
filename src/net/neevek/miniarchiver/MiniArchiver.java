@@ -24,8 +24,10 @@ import java.util.zip.GZIPOutputStream;
 public class MiniArchiver {
     private final static short MAX_FILE_PATH_LEN = 0xffff >> 1;
     private final static int DIR_MARK_BIT = 1 << 15;
-    private final static int VERSION = 65535;
+    private final static int VERSION = 1;
     private final static int BYTE_BUF_SIZE = 1024 * 4;
+    private final static int MAGIC_NUMBER1 = 0xfc;
+    private final static int MAGIC_NUMBER2 = 0x83;
 
     // ************* Archive related code *************
     public static void archive (String rootPath, String outputFile, boolean compress, boolean incCurDir) {
@@ -45,6 +47,9 @@ public class MiniArchiver {
                 dos = new DataOutputStream(new GZIPOutputStream(new FileOutputStream(outputFile)));
             else
                 dos = new DataOutputStream(new FileOutputStream(outputFile));
+
+            MiniArchiverUtil.writeByte(MAGIC_NUMBER1, dos);
+            MiniArchiverUtil.writeByte(MAGIC_NUMBER2, dos);
             MiniArchiverUtil.writeLittleEndianShort((short) VERSION, dos);
             archiveInternal(rootDir, dos, pathStartIndex);
         } catch (IOException e) {
@@ -137,6 +142,13 @@ public class MiniArchiver {
                 dis = new DataInputStream(new GZIPInputStream(new FileInputStream(archiveFile)));
             else
                 dis = new DataInputStream(new FileInputStream(archiveFile));
+
+            byte magicNumber1 = MiniArchiverUtil.readByte(dis);
+            byte magicNumber2 = MiniArchiverUtil.readByte(dis);
+
+            if ((magicNumber1 & 0xff) != MAGIC_NUMBER1 || (magicNumber2 & 0xff) != MAGIC_NUMBER2) {
+                throw new RuntimeException("Not a valid archive file created by MiniArchiver");                 
+            }
 
             // ignore the version number
             short version = MiniArchiverUtil.readLittleEndianShort(dis);

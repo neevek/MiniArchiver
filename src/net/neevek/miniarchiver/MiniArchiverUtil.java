@@ -25,6 +25,10 @@ public class MiniArchiverUtil {
         return -1;
     }
 
+    public static void writeByte(int n, DataOutput dos) throws IOException {
+        dos.write(n);
+    }
+
     public static void writeLittleEndianShort (short n, DataOutput dos) throws IOException {
         n = (short)((n >> 8) & 0xff | (n << 8) & 0xff00);
         dos.writeShort(n);
@@ -33,6 +37,10 @@ public class MiniArchiverUtil {
     public static void writeLittleEndianInt (int n, DataOutput dos) throws IOException {
         n = ((n >>> 24) & 0xff) | ((n >>> 8) & 0xff00) | ((n << 8) & 0xff0000) | ((n << 24) & 0xff000000);
         dos.writeInt(n);
+    }
+
+    public static byte readByte (DataInput dis) throws IOException {
+        return dis.readByte();
     }
 
     public static short readLittleEndianShort (DataInput dis) throws IOException {

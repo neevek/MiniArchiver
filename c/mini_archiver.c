@@ -9,13 +9,16 @@
 #include <dirent.h>
 #include <stdlib.h>
 
-#define VERSION "v0.0.1"
+#define VERSION "0.0.1"
 
 #define MAX_FILE_PATH_LEN (0xffff >> 1)
 #define DIR_MARK_BIT (1 << 15)
 #define ARCHIVE_VERSION 1
 #define BUFFER_SIZE (1024 * 32)
 #define GZ_BUFFER_SIZE (1024 * 128)
+
+#define MAGIC_NUMBER1 0xfc
+#define MAGIC_NUMBER2 0x83
 
 #define DEBUG 0
 
@@ -38,11 +41,13 @@ static int is_dir(struct stat *stat_buf);
 
 static size_t read_bytes (const char *buf, size_t len);
 static void write_bytes (const char *data, size_t len);
+static int read_uint8 (uint8_t *n);
 static int read_int16_le (int16_t *n);
 static int read_int32_le (int32_t *n);
 
 static void exit_with_errormsg (const char *fmt, const char *msg);
 
+static void write_uint8 (uint8_t n);
 static void write_int16_le (int16_t n);
 static void write_int32_le (int32_t n);
 static inline int is_little_endian();
@@ -193,6 +198,10 @@ size_t read_bytes (const char *buf, size_t len) {
     return gzread(ar_file, (voidp)buf, len);
 }
 
+void write_uint8 (uint8_t n) {
+    write_bytes((voidp)&n, 1);
+}
+
 void write_int16_le (int16_t n) {
     if (!is_little_endian()) {
         int16_t tmp = n;
@@ -214,6 +223,10 @@ void write_int32_le (int32_t n) {
     }
 
     write_bytes((voidp)&n, 4);
+}
+
+int read_uint8 (uint8_t *n) {
+    return read_bytes((voidp)n, 1);
 }
 
 int read_int16_le (int16_t *n) {
@@ -407,7 +420,7 @@ void print_help () {
            "    ma -czf foo.ma.gz dir1 dir2 file1 file2\n"
            "    ma -xf foo.ma.gz -C outdir\n"
            "    ma -c dir1 dir2 | gzip -c > foo.ma.gz\n\n"
-           "version: %s, all right reserved @neevek\n\n", VERSION);
+           "version: v%s, all right reserved @neevek\n\n", VERSION);
 }
 
 void exit_with_errormsg (const char *fmt, const char *msg) {
@@ -512,6 +525,8 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            write_uint8(MAGIC_NUMBER1);
+            write_uint8(MAGIC_NUMBER2);
             write_int16_le(ARCHIVE_VERSION);
             while (optind < argc) {
                 archive_internal(argv[optind++]);
@@ -519,6 +534,14 @@ int main(int argc, char *argv[]) {
         } else {
             if (chdir(output_dir) != 0) {
                 fprintf(stderr, "failed to chdir to '%s': %s\n", output_dir, strerror(errno));
+                exit(1);
+            }
+
+            uint8_t magic_num1, magic_num2;
+            read_uint8(&magic_num1);
+            read_uint8(&magic_num2);
+            if (magic_num1 != MAGIC_NUMBER1 || magic_num2 != MAGIC_NUMBER2) {
+                fprintf(stderr, "Not a valid archive file created by MiniArchiver\n");
                 exit(1);
             }
 

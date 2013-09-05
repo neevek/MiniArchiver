@@ -46,7 +46,7 @@ public class Test {
 
     public static void testArchiveAndUnarchive() {
 //        MiniArchiver.archive("/Users/neevek/Desktop/testmini/html", "/Users/neevek/Desktop/testmini/html2.mar", true, false);
-        MiniArchiver.unarchive("/Users/neevek/Desktop/testmini/html.mar", "/Users/neevek/Desktop/testmini/aaa");
+        MiniArchiver.unarchive("/Users/neevek/Desktop/music.ma.gz", "/Users/neevek/Desktop/aa");
 //        MiniArchiver.unarchive("/Users/xiejm/Desktop/html.mar.gz", "/Users/xiejm/Desktop/myhtml");
 
 //        MiniArchiver.archive("/Users/xiejm/Desktop/html", "/Users/xiejm/Desktop/html.mar", true, false);
