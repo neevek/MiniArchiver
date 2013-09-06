@@ -183,6 +183,13 @@ public class MiniArchiver {
             else
                 dis = new DataInputStream(bis);
 
+            byte magicNumber1 = MiniArchiverUtil.readByte(dis);
+            byte magicNumber2 = MiniArchiverUtil.readByte(dis);
+
+            if ((magicNumber1 & 0xff) != MAGIC_NUMBER1 || (magicNumber2 & 0xff) != MAGIC_NUMBER2) {
+                throw new RuntimeException("Not a valid archive file created by MiniArchiver");                 
+            }
+
             // ignore the version number
             short version = MiniArchiverUtil.readLittleEndianShort(dis);
 
@@ -295,6 +302,13 @@ public class MiniArchiver {
     }
 
     private static boolean doLocateFile(DataInputStream dis, String name, OnArchivedFileLocatedListener listener) throws IOException {
+        byte magicNumber1 = MiniArchiverUtil.readByte(dis);
+        byte magicNumber2 = MiniArchiverUtil.readByte(dis);
+
+        if ((magicNumber1 & 0xff) != MAGIC_NUMBER1 || (magicNumber2 & 0xff) != MAGIC_NUMBER2) {
+            throw new RuntimeException("Not a valid archive file created by MiniArchiver");                 
+        }
+
         // ignore the version number
         short version = MiniArchiverUtil.readLittleEndianShort(dis);
 
