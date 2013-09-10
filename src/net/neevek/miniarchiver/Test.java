@@ -10,14 +10,14 @@ import java.io.*;
  */
 public class Test {
     public static void main(String[] args) throws Exception {
-//        testLocateFile();
-        testArchiveAndUnarchive();
+        testLocateFile();
+//        testArchiveAndUnarchive();
     }
 
     private static void testLocateFile() throws IOException {
 
         long ts = System.currentTimeMillis();
-        MiniArchiver.locateFile("/Users/xiejm/Desktop/html.mar", "version", new OnArchivedFileLocatedListener() {
+        MiniArchiver.locateFile("/Users/xiejm/Desktop/html.zip", "version", new OnArchivedFileLocatedListener() {
             @Override
             public void onLocated(String name, int fileLength, boolean isDirectory) {
                 System.out.println(">>>>>>>>>>>>>>>>> FOUND FILE: " + name + ", " + fileLength + ", " + isDirectory);

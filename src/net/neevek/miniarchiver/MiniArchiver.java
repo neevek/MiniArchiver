@@ -125,7 +125,7 @@ public class MiniArchiver {
 
     // ************* Unarchive related code *************
 
-    public static void unarchive (String archiveFilePath, String outputDirPath) {
+    public static boolean unarchive (String archiveFilePath, String outputDirPath) {
         File archiveFile = newArchiveFile(archiveFilePath);
 
         File outputDir = new File(outputDirPath);
@@ -154,20 +154,22 @@ public class MiniArchiver {
             short version = MiniArchiverUtil.readLittleEndianShort(dis);
 
             unarchiveInternal(dis, outputDir);
+            return true;
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
             MiniArchiverUtil.closeCloseable(dis);
         }
+        return false;
     }
 
-    public static void unarchive (InputStream rawInputStream, String outputDirPath) {
+    public static boolean unarchive (InputStream rawInputStream, String outputDirPath) {
         File outputDir = new File(outputDirPath);
         outputDir.mkdirs();
-        unarchive(rawInputStream, outputDir);
+        return unarchive(rawInputStream, outputDir);
     }
 
-    public static void unarchive (InputStream rawInputStream, File outputDir) {
+    public static boolean unarchive (InputStream rawInputStream, File outputDir) {
         DataInputStream dis = null;
         try {
             outputDir.mkdirs();
@@ -194,11 +196,13 @@ public class MiniArchiver {
             short version = MiniArchiverUtil.readLittleEndianShort(dis);
 
             unarchiveInternal(dis, outputDir);
+            return true;
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
             MiniArchiverUtil.closeCloseable(dis);
         }
+        return false;
     }
 
     private static File newArchiveFile(String archiveFilePath) {

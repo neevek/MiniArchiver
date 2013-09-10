@@ -1,6 +1,8 @@
 MiniArchiver
 ============
 
-A tool that packs up a directory of files into an archive file, and uses GZIP to compress the archive file, which is actually what the command "tar zcf archive" does.
+A tool that packs up a directory of files into an archive file, and uses GZIP to compress the archive file, which is actually what the command "tar zcf archive.tar.gz dir" does.
 
-Archive files that this tool creates store only the raw content of the files. meta information of the files, such as permission, owner, group information are *NOT* stored.
+Archive file that this tool creates stores only the raw content of the files. Meta information of the files, such as permission, owner, group information are **NOT** stored, symbolic links are silently **ignored**. 
+
+Currently MiniArchiver does not offer any means of checking the validity of content stored in the archive.
