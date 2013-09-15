@@ -10,8 +10,8 @@ import java.io.*;
  */
 public class Test {
     public static void main(String[] args) throws Exception {
-        testLocateFile();
-//        testArchiveAndUnarchive();
+        // testLocateFile();
+       testArchiveAndUnarchive();
     }
 
     private static void testLocateFile() throws IOException {
@@ -46,7 +46,8 @@ public class Test {
 
     public static void testArchiveAndUnarchive() {
 //        MiniArchiver.archive("/Users/neevek/Desktop/testmini/html", "/Users/neevek/Desktop/testmini/html2.mar", true, false);
-        MiniArchiver.unarchive("/Users/neevek/Desktop/music.ma.gz", "/Users/neevek/Desktop/aa");
+        //MiniArchiver.unarchive("/Users/neevek/Desktop/music.ma.gz", "D:\\Workspace\\Code\\9game\\libs\\MiniArchiver\\dist\\html");
+        MiniArchiver.archive("D:\\Workspace\\Code\\9game\\libs\\MiniArchiver\\test\\dev\\", "D:\\Workspace\\Code\\9game\\libs\\MiniArchiver\\test\\html2.gz",true, false );
 //        MiniArchiver.unarchive("/Users/xiejm/Desktop/html.mar.gz", "/Users/xiejm/Desktop/myhtml");
 
 //        MiniArchiver.archive("/Users/xiejm/Desktop/html", "/Users/xiejm/Desktop/html.mar", true, false);
